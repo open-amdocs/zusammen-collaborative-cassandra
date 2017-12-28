@@ -1,0 +1,8 @@
+{
+  "com.amdocs.zusammen.plugin.dao.VersionDaoFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.VersionDaoFactoryImpl",
+  "com.amdocs.zusammen.plugin.dao.ElementRepositoryFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.ElementRepositoryFactoryImpl",
+  "com.amdocs.zusammen.plugin.dao.VersionSynchronizationStateRepositoryFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.VersionSynchronizationStateRepositoryFactoryImpl",
+  "com.amdocs.zusammen.plugin.dao.ElementSynchronizationStateRepositoryFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.ElementSynchronizationStateRepositoryFactoryImpl",
+  "com.amdocs.zusammen.plugin.dao.VersionStageRepositoryFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.VersionStageRepositoryFactoryImpl",
+  "com.amdocs.zusammen.plugin.dao.ElementStageRepositoryFactory": "com.amdocs.zusammen.plugin.dao.impl.cassandra.ElementStageRepositoryFactoryImpl"
+}
