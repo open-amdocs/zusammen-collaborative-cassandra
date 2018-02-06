@@ -35,6 +35,13 @@ public class ElementSynchronizationStateRepositoryImpl
   }
 
   @Override
+  public void deleteAll(SessionContext context, ElementEntityContext elementContext) {
+    getAccessor(context).deleteAll(elementContext.getSpace(),
+        elementContext.getItemId().toString(),
+        elementContext.getVersionId().toString());
+  }
+
+  @Override
   public void create(SessionContext context, ElementEntityContext elementContext,
                      SynchronizationStateEntity elementSyncState) {
     update(context, elementContext.getSpace(),
@@ -69,18 +76,18 @@ public class ElementSynchronizationStateRepositoryImpl
                           SynchronizationStateEntity elementSyncState) {
 
 
-      getAccessor(context).updateDirty(true,
-          elementContext.getSpace(),
-          elementContext.getItemId().toString(),
-          elementContext.getVersionId().toString(),
-          elementSyncState.getId().toString(),
-          elementContext.getRevisionId().getValue());
+    getAccessor(context).updateDirty(true,
+        elementContext.getSpace(),
+        elementContext.getItemId().toString(),
+        elementContext.getVersionId().toString(),
+        elementSyncState.getId().toString(),
+        elementContext.getRevisionId().getValue());
 
-      getVersionElementsAccessor(context).addDirtyElements(
-          Collections.singleton(elementSyncState.getId().toString()), elementContext.getSpace(),
-          elementContext.getItemId().toString(),
-          elementContext.getVersionId().toString(),
-          elementContext.getRevisionId().getValue());
+    getVersionElementsAccessor(context).addDirtyElements(
+        Collections.singleton(elementSyncState.getId().toString()), elementContext.getSpace(),
+        elementContext.getItemId().toString(),
+        elementContext.getVersionId().toString(),
+        elementContext.getRevisionId().getValue());
   }
 
   @Override
@@ -115,7 +122,7 @@ public class ElementSynchronizationStateRepositoryImpl
   }
 
   private void update(SessionContext context, String space, Id itemId, Id versionId, Id
-      versionRevisionId,Id elementRevisionId,Id elementId, Date publishTime, boolean isDirty) {
+      versionRevisionId, Id elementRevisionId, Id elementId, Date publishTime, boolean isDirty) {
     getAccessor(context).update(publishTime,
         isDirty,
         space,
@@ -141,15 +148,10 @@ public class ElementSynchronizationStateRepositoryImpl
 
 
   private SynchronizationStateEntity getSynchronizationStateEntity(Row row) {
-    SynchronizationStateEntity entity =
-        new SynchronizationStateEntity(new Id(row.getString(SynchronizationStateField.ID)),
-            new Id(row.getString(SynchronizationStateField.REVISION_ID)),
-            row.getDate(SynchronizationStateField.PUBLISH_TIME),
-            row.getBool(SynchronizationStateField.DIRTY));
-    entity.setRevisionId(new Id(row.getString(SynchronizationStateField.REVISION_ID)));
-
-    return entity;
-
+    return new SynchronizationStateEntity(new Id(row.getString(SynchronizationStateField.ID)),
+        new Id(row.getString(SynchronizationStateField.REVISION_ID)),
+        row.getDate(SynchronizationStateField.PUBLISH_TIME),
+        row.getBool(SynchronizationStateField.DIRTY));
   }
 
   private ElementSynchronizationStateAccessor getAccessor(SessionContext context) {
@@ -177,13 +179,16 @@ public class ElementSynchronizationStateRepositoryImpl
     void delete(String space, String itemId, String versionId, String elementId, String revisionId);
 
     @Query("SELECT element_id,revision_id, publish_time, dirty FROM element_synchronization_state" +
+        " WHERE space=? AND item_id=? AND version_id=? AND element_id=? AND revision_id=?")
+    ResultSet get(String space, String itemId, String versionId, String elementId,
+                  String revisionId);
+
+    @Query("SELECT element_id,revision_id, publish_time, dirty FROM element_synchronization_state" +
         " WHERE space=? AND item_id=? AND version_id=?")
     ResultSet list(String space, String itemId, String versionId);
 
-    @Query("SELECT element_id,revision_id, publish_time, dirty FROM element_synchronization_state" +
-        " WHERE space=? AND item_id=? AND version_id=? AND element_id=? AND revision_id = ?  ")
-    ResultSet get(String space, String itemId, String versionId, String elementId, String
-        revisionId);
+    @Query("DELETE FROM element_synchronization_state WHERE space=? AND item_id=? AND version_id=?")
+    void deleteAll(String space, String itemId, String versionId);
   }
 
   private static final class SynchronizationStateField {

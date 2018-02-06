@@ -22,6 +22,8 @@ import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.Info;
 import com.amdocs.zusammen.datatypes.item.Relation;
 import com.amdocs.zusammen.plugin.ZusammenPluginConstants;
+import com.amdocs.zusammen.plugin.dao.ElementRepository;
+import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 import com.amdocs.zusammen.utils.fileutils.json.JsonUtil;
 import com.datastax.driver.core.ResultSet;
@@ -30,8 +32,6 @@ import com.datastax.driver.mapping.annotations.Accessor;
 import com.datastax.driver.mapping.annotations.Param;
 import com.datastax.driver.mapping.annotations.Query;
 import com.google.gson.reflect.TypeToken;
-import com.amdocs.zusammen.plugin.dao.ElementRepository;
-import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 
 import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
@@ -49,22 +49,15 @@ public class ElementRepositoryImpl implements ElementRepository {
 
   @Override
   public Map<Id, Id> listIds(SessionContext context, ElementEntityContext elementContext) {
-
     if (elementContext.getRevisionId() == null) {
-      String revisionId = calculateLastRevisionId(context, elementContext);
+      Id revisionId = calculateLastRevisionId(context, elementContext);
       if (revisionId == null) {
         return new HashMap<>();
       }
-
-      elementContext.setRevisionId(new Id(revisionId));
+      elementContext.setRevisionId(revisionId);
     }
-    return getVersionElementIds(context, elementContext).entrySet().stream().collect(Collectors
-        .toMap(entry -> new Id(entry.getKey()), entry -> new Id(entry.getValue())));
-
-   /* return getVersionElementIds(context, elementContext).stream()
-        .map(Id::new)
-        .collect(Collectors.toList());*/
-
+    return getVersionElementIds(context, elementContext).entrySet().stream().collect(
+        Collectors.toMap(entry -> new Id(entry.getKey()), entry -> new Id(entry.getValue())));
   }
 
   @Override
@@ -77,7 +70,6 @@ public class ElementRepositoryImpl implements ElementRepository {
   @Override
   public void update(SessionContext context, ElementEntityContext elementContext,
                      ElementEntity element) {
-
     Id elementRevisionId = getElementRevision(context, elementContext, element.getId());
     if (elementRevisionId.equals(elementContext.getRevisionId())) {
       updateElement(context, elementContext, element);
@@ -94,9 +86,19 @@ public class ElementRepositoryImpl implements ElementRepository {
   }
 
   @Override
+  public void cleanAllRevisions(SessionContext context, ElementEntityContext elementContext,
+                                ElementEntity element) {
+    getElementAccessor(context).deleteAllRevisions(
+        elementContext.getSpace(),
+        elementContext.getItemId().toString(),
+        elementContext.getVersionId().toString(),
+        element.getId().toString());
+  }
+
+  @Override
   public Optional<ElementEntity> get(SessionContext context, ElementEntityContext elementContext,
                                      ElementEntity element) {
-    String revisionId = calculateElementRevisionId(context, elementContext, element);
+    String revisionId = calculateElementRevisionId(context, elementContext, element.getId());
     if (revisionId == null) {
       return Optional.empty();
     }
@@ -115,7 +117,7 @@ public class ElementRepositoryImpl implements ElementRepository {
   public Optional<ElementEntity> getDescriptor(SessionContext context,
                                                ElementEntityContext elementContext,
                                                ElementEntity element) {
-    String revisionId = calculateElementRevisionId(context, elementContext, element);
+    String revisionId = calculateElementRevisionId(context, elementContext, element.getId());
     if (revisionId == null) {
       return Optional.empty();
     }
@@ -127,7 +129,9 @@ public class ElementRepositoryImpl implements ElementRepository {
         element.getId().toString(),
         revisionId).one();
 
-    return row == null ? Optional.empty() : Optional.of(getElementEntityDescriptor(element, row));
+    return row == null
+        ? Optional.empty()
+        : Optional.of(getElementEntityDescriptor(element.getId(), row));
   }
 
   @Override
@@ -141,7 +145,7 @@ public class ElementRepositoryImpl implements ElementRepository {
   @Override
   public Optional<Id> getHash(SessionContext context, ElementEntityContext elementContext,
                               ElementEntity element) {
-    String revisionId = calculateElementRevisionId(context, elementContext, element);
+    String revisionId = calculateElementRevisionId(context, elementContext, element.getId());
     if (revisionId == null) {
       return Optional.empty();
     }
@@ -158,48 +162,30 @@ public class ElementRepositoryImpl implements ElementRepository {
 
   private String calculateElementRevisionId(SessionContext context,
                                             ElementEntityContext elementContext,
-                                            ElementEntity element) {
-
+                                            Id elementId) {
     if (elementContext.getSpace().equals(ZusammenPluginConstants.PUBLIC_SPACE)) {
+      elementContext.setRevisionId(elementContext.getRevisionId() == null
+          ? calculateLastRevisionId(context, elementContext)
+          : elementContext.getRevisionId());
 
-      String versionRevision;
-      if (elementContext.getRevisionId() == null) {
-        versionRevision = calculateLastRevisionId(context, elementContext);
-      } else {
-        versionRevision = elementContext.getRevisionId().getValue();
-      }
-
-      elementContext.setRevisionId(new Id(versionRevision));
-      Map<String, String> elementIds = getVersionElementIds(context, elementContext);
-      if (elementIds.containsKey(element.getId().getValue())) {
-        return elementIds.get(element.getId().getValue());
-      } else {
-        return null;
-      }
-
-    } else {
-      return Id.ZERO.getValue();
+      return getVersionElementIds(context, elementContext)
+          .getOrDefault(elementId.getValue(), null);
     }
+    return Id.ZERO.getValue();
   }
 
-  private String calculateLastRevisionId(SessionContext context, ElementEntityContext
-      elementContext) {
-    List<Row> rows = getVersionElementsAccessor(context).listRevisions(elementContext.getSpace(),
-        elementContext
-            .getItemId().toString(), elementContext.getVersionId().toString()).all();
-    if (rows == null || rows.size() == 0) {
+  private Id calculateLastRevisionId(SessionContext context,
+                                     ElementEntityContext elementContext) {
+    List<Row> rows = getVersionElementsAccessor(context)
+        .listRevisions(elementContext.getSpace(), elementContext.getItemId().toString(),
+            elementContext.getVersionId().toString()).all();
+    if (rows == null || rows.isEmpty()) {
       return null;
     }
     rows.sort((o1, o2) -> o1.getDate(VersionElementsField.PUBLISH_TIME)
         .after(o2.getDate(VersionElementsField.PUBLISH_TIME)) ? -1 : 1);
-    return rows.get(0).getString(VersionElementsField.REVISION_ID);
+    return new Id(rows.get(0).getString(VersionElementsField.REVISION_ID));
   }
-
-  /*private static String getVersionId(ElementEntityContext elementContext) {
-    return elementContext.getRevisionId() == null
-        ? elementContext.getVersionId().toString()
-        : elementContext.getRevisionId().getValue();
-  }*/
 
   private ElementNamespaceAccessor getElementNamespaceAccessor(SessionContext context) {
     return CassandraDaoUtils.getAccessor(context, ElementNamespaceAccessor.class);
@@ -251,8 +237,6 @@ public class ElementRepositoryImpl implements ElementRepository {
 
   private void updateElement(SessionContext context, ElementEntityContext elementContext,
                              ElementEntity element) {
-
-
     if (element.getParentId() == null) {
       getElementAccessor(context).update(
           JsonUtil.object2Json(element.getInfo()),
@@ -366,7 +350,8 @@ public class ElementRepositoryImpl implements ElementRepository {
         elementContext.getRevisionId().getValue());
   }
 
-  static ElementEntity getElementEntityDescriptor(ElementEntity element, Row row) {
+  static ElementEntity getElementEntityDescriptor(Id elementId, Row row) {
+    ElementEntity element = new ElementEntity(elementId);
     element.setNamespace(getNamespace(row.getString(ElementField.NAMESPACE)));
     element.setParentId(getParentId(row.getString(ElementField.PARENT_ID)));
     element.setInfo(json2Object(row.getString(ElementField.INFO), Info.class));
@@ -380,13 +365,13 @@ public class ElementRepositoryImpl implements ElementRepository {
   }
 
   static ElementEntity getElementEntity(ElementEntity element, Row row) {
-    getElementEntityDescriptor(element, row);
+    ElementEntity retrievedElement = getElementEntityDescriptor(element.getId(), row);
 
-    element.setData(row.getBytes(ElementField.DATA));
-    element.setSearchableData(row.getBytes(ElementField.SEARCHABLE_DATA));
-    element.setVisualization(row.getBytes(ElementField.VISUALIZATION));
-    element.setElementHash(new Id(row.getString(ElementField.ELEMENT_HASH)));
-    return element;
+    retrievedElement.setData(row.getBytes(ElementField.DATA));
+    retrievedElement.setSearchableData(row.getBytes(ElementField.SEARCHABLE_DATA));
+    retrievedElement.setVisualization(row.getBytes(ElementField.VISUALIZATION));
+    retrievedElement.setElementHash(new Id(row.getString(ElementField.ELEMENT_HASH)));
+    return retrievedElement;
   }
 
   private Id getElementHash(Row row) {
@@ -418,29 +403,18 @@ public class ElementRepositoryImpl implements ElementRepository {
         elementContext.getRevisionId().getValue()).one();
     return row == null
         ? new HashMap<>()
-        : row.getMap(VersionElementsField.ELEMENT_IDS, String.class, String
-            .class);
+        : row.getMap(VersionElementsField.ELEMENT_IDS, String.class, String.class);
   }
 
-  private Id getElementRevision(SessionContext context, ElementEntityContext elementContext
-      , Id elementId) {
+  private Id getElementRevision(SessionContext context, ElementEntityContext elementContext,
+                                Id elementId) {
     Map<Id, Id> versionElementIds =
-        listIds(context, new ElementEntityContext
-            (elementContext.getSpace(), elementContext.getItemId(), elementContext.getVersionId(),
-                elementContext.getRevisionId()));
+        listIds(context,
+            new ElementEntityContext(elementContext.getSpace(), elementContext.getItemId(),
+                elementContext.getVersionId(), elementContext.getRevisionId()));
     return versionElementIds.get(elementId);
-
   }
 
-
-  /*
-CREATE TABLE IF NOT EXISTS element_namespace (
-	item_id text,
-	element_id text,
-	namespace text,
-	PRIMARY KEY (( item_id, element_id ))
-);
-   */
   @Accessor
   interface ElementNamespaceAccessor {
     @Query("UPDATE element_namespace SET namespace=:ns " +
@@ -497,8 +471,8 @@ CREATE TABLE IF NOT EXISTS element_namespace (
     @Query("SELECT parent_id, namespace, info, relations, data, searchable_data, visualization, " +
         "sub_element_ids,element_hash FROM element " +
         "WHERE space=? AND item_id=? AND version_id=? AND element_id=? AND revision_id=? ")
-    ResultSet get(String space, String itemId, String versionId, String elementId, String
-        revisionId);
+    ResultSet get(String space, String itemId, String versionId, String elementId,
+                  String revisionId);
 
     @Query("SELECT parent_id, namespace, info, relations, sub_element_ids FROM element " +
         "WHERE space=? AND item_id=? AND version_id=? AND element_id=? AND revision_id=? ")
@@ -517,8 +491,11 @@ CREATE TABLE IF NOT EXISTS element_namespace (
 
     @Query("SELECT element_hash FROM element " +
         "WHERE space=? AND item_id=? AND version_id=? AND element_id=? AND revision_id=? ")
-    ResultSet getHash(String space, String itemId, String versionId, String elementId, String
-        revisionId);
+    ResultSet getHash(String space, String itemId, String versionId, String elementId,
+                      String revisionId);
+
+    @Query("DELETE FROM element WHERE space=? AND item_id=? AND version_id=? AND element_id=?")
+    void deleteAllRevisions(String space, String itemId, String versionId, String elementId);
   }
 
   private static final class ElementField {

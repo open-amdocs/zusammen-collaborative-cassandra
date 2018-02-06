@@ -38,8 +38,8 @@ import com.amdocs.zusammen.datatypes.response.Module;
 import com.amdocs.zusammen.datatypes.response.Response;
 import com.amdocs.zusammen.datatypes.response.ReturnCode;
 import com.amdocs.zusammen.datatypes.response.ZusammenException;
-import com.amdocs.zusammen.plugin.ZusammenPluginConstants;
 import com.amdocs.zusammen.plugin.ZusammenPluginUtil;
+import com.amdocs.zusammen.plugin.collaboration.CommitStagingService;
 import com.amdocs.zusammen.plugin.collaboration.ElementPrivateStore;
 import com.amdocs.zusammen.plugin.collaboration.ElementPublicStore;
 import com.amdocs.zusammen.plugin.collaboration.ElementStageStore;
@@ -48,6 +48,7 @@ import com.amdocs.zusammen.plugin.collaboration.RevertService;
 import com.amdocs.zusammen.plugin.collaboration.SyncService;
 import com.amdocs.zusammen.plugin.collaboration.VersionPrivateStore;
 import com.amdocs.zusammen.plugin.collaboration.VersionPublicStore;
+import com.amdocs.zusammen.plugin.collaboration.VersionStageStore;
 import com.amdocs.zusammen.plugin.collaboration.impl.ElementPrivateStoreImpl;
 import com.amdocs.zusammen.plugin.collaboration.impl.ElementPublicStoreImpl;
 import com.amdocs.zusammen.plugin.collaboration.impl.ElementStageStoreImpl;
@@ -55,12 +56,12 @@ import com.amdocs.zusammen.plugin.collaboration.impl.VersionPrivateStoreImpl;
 import com.amdocs.zusammen.plugin.collaboration.impl.VersionPublicStoreImpl;
 import com.amdocs.zusammen.plugin.collaboration.impl.VersionStageStoreImpl;
 import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
+import com.amdocs.zusammen.plugin.dao.types.StageEntity;
 import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 import com.amdocs.zusammen.plugin.dao.types.VersionDataElement;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 import com.amdocs.zusammen.sdk.collaboration.CollaborationStore;
 import com.amdocs.zusammen.sdk.collaboration.types.CollaborationElement;
-import com.amdocs.zusammen.sdk.collaboration.types.CollaborationElementChange;
 import com.amdocs.zusammen.sdk.collaboration.types.CollaborationElementConflict;
 import com.amdocs.zusammen.sdk.collaboration.types.CollaborationItemVersionConflict;
 import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeChange;
@@ -68,9 +69,6 @@ import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeResult;
 import com.amdocs.zusammen.sdk.collaboration.types.CollaborationPublishResult;
 import com.amdocs.zusammen.sdk.types.ElementConflictDescriptor;
 import com.amdocs.zusammen.sdk.types.ElementDescriptor;
-import com.amdocs.zusammen.plugin.collaboration.CommitStagingService;
-import com.amdocs.zusammen.plugin.collaboration.VersionStageStore;
-import com.amdocs.zusammen.plugin.dao.types.StageEntity;
 
 import java.util.Collection;
 import java.util.Date;
@@ -81,7 +79,7 @@ import java.util.stream.Collectors;
 import static com.amdocs.zusammen.datatypes.item.SynchronizationStatus.MERGING;
 import static com.amdocs.zusammen.datatypes.item.SynchronizationStatus.OUT_OF_SYNC;
 import static com.amdocs.zusammen.datatypes.item.SynchronizationStatus.UP_TO_DATE;
-import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.convertToVersionEntity;
+import static com.amdocs.zusammen.plugin.ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID;
 
 public class CassandraCollaborationStorePluginImpl implements CollaborationStore {
   // TODO: 8/15/2017 inject
@@ -116,7 +114,16 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
   @Override
   public Response<Void> deleteItem(SessionContext context, Id itemId) {
-    // done by state store
+    versionPrivateStore.list(context, itemId)
+        .forEach(version -> deleteItemVersion(context, itemId, version.getId()));
+
+    versionPublicStore.list(context, itemId)
+        .forEach(version -> {
+          elementPublicStore.cleanAll(context, new ElementContext(itemId, version.getId()));
+          versionPublicStore.delete(context, itemId, version);
+        });
+
+    // delete item done by state store
     return new Response(Void.TYPE);
   }
 
@@ -158,10 +165,14 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
   @Override
   public Response<Void> deleteItemVersion(SessionContext context, Id itemId, Id versionId) {
-    elementPrivateStore
-        .delete(context, new ElementContext(itemId, versionId), new VersionDataElement());
+    ElementContext elementContext = new ElementContext(itemId, versionId);
+    VersionEntity version = new VersionEntity(versionId);
 
-    versionPrivateStore.delete(context, itemId, new VersionEntity(versionId));
+    elementStageStore.deleteAll(context, elementContext);
+    versionStageStore.delete(context, itemId, version);
+
+    elementPrivateStore.cleanAll(context, elementContext);
+    versionPrivateStore.delete(context, itemId, version);
     return new Response(Void.TYPE);
   }
 
@@ -254,7 +265,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
     CollaborationItemVersionConflict result = new CollaborationItemVersionConflict();
     for (StageEntity<ElementEntity> stagedElementDescriptor : conflictedStagedElementDescriptors) {
-      if (ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID.equals(stagedElementDescriptor.getEntity().getId())) {
+      if (ROOT_ELEMENTS_PARENT_ID.equals(stagedElementDescriptor.getEntity().getId())) {
         result.setVersionDataConflict(
             getVersionDataConflict(context, elementContext, stagedElementDescriptor));
       } else {
@@ -268,7 +279,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   @Override
   public Response<ItemVersionRevisions> listItemVersionRevisions(SessionContext context, Id itemId,
                                                                  Id versionId) {
-    return new Response<>(versionPublicStore.listItemVersionRevisions(context, itemId, versionId));
+    return new Response<>(versionPublicStore.listRevisions(context, itemId, versionId));
   }
 
   @Override
@@ -380,7 +391,8 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
                                                                    Resolution resolution) {
     ElementContext elementContext = new ElementContext(element.getItemId(), element.getVersionId());
     elementStageStore
-        .resolveConflict(context, elementContext, ZusammenPluginUtil.convertToElementEntity(element), resolution);
+        .resolveConflict(context, elementContext,
+            ZusammenPluginUtil.convertToElementEntity(element), resolution);
     commitStagingService.commitStaging(context, element.getItemId(), element.getVersionId());
 
     return new Response<>(new CollaborationMergeResult());
@@ -393,7 +405,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   }
 
   @Override
-  public Response<HealthInfo> checkHealth(SessionContext context) throws ZusammenException {
+  public Response<HealthInfo> checkHealth(SessionContext context) {
     HealthInfo healthInfo = versionPublicStore.checkHealth(context)
         ? new HealthInfo(Module.ZCSP.getDescription(), HealthStatus.UP, "")
         : new HealthInfo(Module.ZCSP.getDescription(), HealthStatus.DOWN, "No Schema Available");
@@ -411,7 +423,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
     return elementPublicStore
         .getDescriptor(context, new ElementContext(itemId, versionId, revisionId),
-            ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID)
+            ROOT_ELEMENTS_PARENT_ID)
         .map(ZusammenPluginUtil::convertToVersionData)
         .map(itemVersionData -> ZusammenPluginUtil
             .convertToItemVersion(versionEntity.get(), itemVersionData));
@@ -440,7 +452,8 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
                                                          ElementContext elementContext,
                                                          StageEntity<ElementEntity> stagedElementDescriptor) {
     ItemVersionDataConflict versionConflict = new ItemVersionDataConflict();
-    versionConflict.setRemoteData(ZusammenPluginUtil.convertToVersionData(stagedElementDescriptor.getEntity()));
+    versionConflict.setRemoteData(
+        ZusammenPluginUtil.convertToVersionData(stagedElementDescriptor.getEntity()));
     if (stagedElementDescriptor.getAction() == Action.UPDATE) {
       versionConflict.setLocalData(getPrivateVersionData(context, elementContext));
     }
@@ -449,7 +462,8 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
   private ItemVersionData getPrivateVersionData(SessionContext context,
                                                 ElementContext elementContext) {
-    return elementPrivateStore.getDescriptor(context, elementContext, ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID)
+    return elementPrivateStore
+        .getDescriptor(context, elementContext, ROOT_ELEMENTS_PARENT_ID)
         .map(ZusammenPluginUtil::convertToVersionData)
         .orElseThrow(() -> new IllegalStateException("Version must have data"));
   }
@@ -458,7 +472,8 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
                                                                  ElementContext elementContext,
                                                                  StageEntity<ElementEntity> stagedElementDescriptor) {
     ElementDescriptor elementDescriptorFromStage =
-        ZusammenPluginUtil.convertToElementDescriptor(elementContext, (stagedElementDescriptor.getEntity()));
+        ZusammenPluginUtil
+            .convertToElementDescriptor(elementContext, (stagedElementDescriptor.getEntity()));
 
     ElementConflictDescriptor conflictDescriptor = new ElementConflictDescriptor();
     switch (stagedElementDescriptor.getAction()) {
@@ -467,10 +482,12 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
         break;
       case UPDATE:
         conflictDescriptor.setRemoteElementDescriptor(elementDescriptorFromStage);
-        conflictDescriptor.setLocalElementDescriptor(ZusammenPluginUtil.convertToElementDescriptor(elementContext,
-            elementPrivateStore
-                .getDescriptor(context, elementContext, stagedElementDescriptor.getEntity().getId())
-                .orElse(null)));// updated on public while deleted from private
+        conflictDescriptor
+            .setLocalElementDescriptor(ZusammenPluginUtil.convertToElementDescriptor(elementContext,
+                elementPrivateStore
+                    .getDescriptor(context, elementContext,
+                        stagedElementDescriptor.getEntity().getId())
+                    .orElse(null)));// updated on public while deleted from private
         break;
       case DELETE:
         conflictDescriptor.setLocalElementDescriptor(elementDescriptorFromStage);
@@ -481,21 +498,12 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
     return conflictDescriptor;
   }
 
-  private void addElementsToChangedElements(ElementContext elementContext,
-                                            Collection<ElementEntity> elements,
-                                            Collection<CollaborationElementChange> changedElements,
-                                            Action action) {
-    elements.stream()
-        .map(elementEntity -> ZusammenPluginUtil
-            .convertToElementChange(elementContext, elementEntity, action))
-        .forEach(changedElements::add);
-  }
-
   private CollaborationElementConflict getElementConflict(SessionContext context,
                                                           ElementContext entityContext,
                                                           StageEntity<ElementEntity> stagedElement) {
     CollaborationElement elementFromStage =
-        ZusammenPluginUtil.convertToCollaborationElement(entityContext, (stagedElement.getEntity()));
+        ZusammenPluginUtil
+            .convertToCollaborationElement(entityContext, (stagedElement.getEntity()));
 
     CollaborationElementConflict conflict = new CollaborationElementConflict();
     switch (stagedElement.getAction()) {

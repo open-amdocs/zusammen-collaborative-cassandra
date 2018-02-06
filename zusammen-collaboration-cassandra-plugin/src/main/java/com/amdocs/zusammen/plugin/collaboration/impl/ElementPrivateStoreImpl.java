@@ -6,31 +6,51 @@ import com.amdocs.zusammen.datatypes.item.ElementContext;
 import com.amdocs.zusammen.plugin.ZusammenPluginConstants;
 import com.amdocs.zusammen.plugin.collaboration.ElementPrivateStore;
 import com.amdocs.zusammen.plugin.dao.ElementRepository;
-import com.amdocs.zusammen.plugin.dao.ElementSynchronizationStateRepositoryFactory;
-import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 import com.amdocs.zusammen.plugin.dao.ElementRepositoryFactory;
 import com.amdocs.zusammen.plugin.dao.ElementSynchronizationStateRepository;
+import com.amdocs.zusammen.plugin.dao.ElementSynchronizationStateRepositoryFactory;
 import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
+import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getPrivateElementContext;
 import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getPrivateSpaceName;
 
 public class ElementPrivateStoreImpl implements ElementPrivateStore {
   private static final Id REVISION_ID = Id.ZERO; // the private revision id is Id.ZERO 0000000...
+  private static final String SUB_ELEMENT_NOT_EXIST_ERROR = "Get sub element error: " +
+      "Element %s, which appears as a sub element of element %s, " +
+      "does not exist in space %s, item %s, version %s";
 
   @Override
   public Map<Id, Id> listIds(SessionContext context, ElementContext elementContext) {
     return getElementRepository(context)
         .listIds(context, new ElementEntityContext(getPrivateSpaceName(context), elementContext));
+  }
+
+  @Override
+  public void cleanAll(SessionContext context, ElementContext elementContext) {
+    ElementEntityContext privateContext =
+        new ElementEntityContext(getPrivateSpaceName(context), elementContext);
+
+    ElementSynchronizationStateRepository elementSyncStateRepository =
+        getElementSyncStateRepository(context);
+
+    ElementRepository elementRepository = getElementRepository(context);
+    elementSyncStateRepository
+        .list(context, privateContext) // in order to find deleted elements as well
+        .forEach(syncState -> elementRepository
+            .cleanAllRevisions(context, privateContext, new ElementEntity(syncState.getId())));
+
+    elementSyncStateRepository.deleteAll(context, privateContext);
   }
 
   @Override
@@ -44,12 +64,25 @@ public class ElementPrivateStoreImpl implements ElementPrivateStore {
     ElementEntityContext privateContext =
         new ElementEntityContext(getPrivateSpaceName(context), elementContext);
     privateContext.setRevisionId(REVISION_ID);
-    return elementRepository.get(context, privateContext, new ElementEntity(elementId))
-        .map(ElementEntity::getSubElementIds).orElse(new HashSet<>()).stream()
-        .map(subElementId -> elementRepository
-            .get(context, privateContext, new ElementEntity(subElementId)).get())
-        .filter(Objects::nonNull)
-        .collect(Collectors.toList());
+
+    List<ElementEntity> subElements = new ArrayList<>();
+    Optional<Set<Id>> subElementIds = elementRepository
+        .get(context, privateContext, new ElementEntity(elementId))
+        .map(ElementEntity::getSubElementIds);
+    if (!subElementIds.isPresent()) {
+      return subElements;
+    }
+
+    String elementIdValue = elementId.getValue();
+    for (Id subElementId : subElementIds.get()) {
+      subElements.add(elementRepository
+          .get(context, privateContext, new ElementEntity(subElementId))
+          .orElseThrow(() -> new IllegalStateException(String
+              .format(SUB_ELEMENT_NOT_EXIST_ERROR, subElementId, elementIdValue,
+                  privateContext.getSpace(), privateContext.getItemId(),
+                  privateContext.getVersionId()))));
+    }
+    return subElements;
   }
 
   @Override
@@ -76,10 +109,8 @@ public class ElementPrivateStoreImpl implements ElementPrivateStore {
   @Override
   public Collection<SynchronizationStateEntity> listSynchronizationStates(SessionContext context,
                                                                           ElementContext elementContext) {
-    ElementEntityContext privateElementContext =
-        new ElementEntityContext(getPrivateSpaceName(context), elementContext);
     return getElementSyncStateRepository(context)
-        .list(context, privateElementContext);
+        .list(context, new ElementEntityContext(getPrivateSpaceName(context), elementContext));
   }
 
   @Override

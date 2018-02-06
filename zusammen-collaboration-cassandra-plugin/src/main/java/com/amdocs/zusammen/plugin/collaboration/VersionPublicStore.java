@@ -6,11 +6,14 @@ import com.amdocs.zusammen.datatypes.itemversion.ItemVersionRevisions;
 import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.Map;
 import java.util.Optional;
 
 public interface VersionPublicStore {
+
+  Collection<VersionEntity> list(SessionContext context, Id itemId);
 
   Optional<VersionEntity> get(SessionContext context, Id itemId, Id versionId);
 
@@ -23,7 +26,9 @@ public interface VersionPublicStore {
   void update(SessionContext context, Id itemId, VersionEntity version, Id revisionId,
               Map<Id, Id> versionElementIds, Date publishTime, String message);
 
-  boolean checkHealth(SessionContext context);
+  void delete(SessionContext context, Id itemId, VersionEntity version);
 
-  ItemVersionRevisions listItemVersionRevisions(SessionContext context, Id itemId, Id versionId);
+  ItemVersionRevisions listRevisions(SessionContext context, Id itemId, Id versionId);
+
+  boolean checkHealth(SessionContext context);
 }

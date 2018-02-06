@@ -18,6 +18,8 @@ public interface ElementStageStore {
   Collection<StageEntity<ElementEntity>> listConflictedDescriptors(SessionContext context,
                                                                    ElementContext elementContext);
 
+  void deleteAll(SessionContext context, ElementContext elementContext);
+
   Optional<StageEntity<ElementEntity>> get(SessionContext context, ElementContext elementContext,
                                            ElementEntity element);
 

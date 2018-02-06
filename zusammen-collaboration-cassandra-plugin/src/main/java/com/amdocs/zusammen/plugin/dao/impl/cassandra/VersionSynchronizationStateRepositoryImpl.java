@@ -2,14 +2,13 @@ package com.amdocs.zusammen.plugin.dao.impl.cassandra;
 
 import com.amdocs.zusammen.datatypes.Id;
 import com.amdocs.zusammen.datatypes.SessionContext;
+import com.amdocs.zusammen.plugin.dao.VersionSynchronizationStateRepository;
+import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
+import com.amdocs.zusammen.plugin.dao.types.VersionContext;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.mapping.annotations.Accessor;
 import com.datastax.driver.mapping.annotations.Query;
-import com.amdocs.zusammen.plugin.dao.VersionSynchronizationStateRepository;
-import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
-import com.amdocs.zusammen.plugin.dao.types.VersionContext;
-import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -36,40 +35,23 @@ public class VersionSynchronizationStateRepositoryImpl
   }
 
   @Override
-  public List<SynchronizationStateEntity> list(SessionContext context, VersionContext
-      entityContext, VersionEntity versionEntity) {
-
-    List<Row> rows = getAccessor(context).list(entityContext.getSpace(), entityContext.getItemId().toString
-        (),versionEntity.getId().toString()).all();
-    return rows == null ? new ArrayList<>():
-        rows.stream().map(VersionSynchronizationStateRepositoryImpl::getSynchronizationStateEntity).collect(Collectors.toList());
+  public List<SynchronizationStateEntity> list(SessionContext context, VersionContext entityContext,
+                                               SynchronizationStateEntity syncStateEntity) {
+    List<Row> rows = getAccessor(context)
+        .list(entityContext.getSpace(), entityContext.getItemId().toString(),
+            syncStateEntity.getId().toString()).all();
+    return rows == null
+        ? new ArrayList<>()
+        : rows.stream()
+            .map(VersionSynchronizationStateRepositoryImpl::getSynchronizationStateEntity)
+            .collect(Collectors.toList());
   }
-
-
-
-  /*@Override
-  public List<SynchronizationStateEntity> listRevisions(SessionContext context,
-                                                        VersionContext entityContext,
-                                                        SynchronizationStateEntity syncStateEntity) {
-    List<Row> rows = getAccessor(context).list(entityContext.getSpace(), entityContext.getItemId()
-        .toString(), syncStateEntity.getId().toString()).all();
-    return rows == null ? new ArrayList<>() :rows.stream()
-        .map(VersionSynchronizationStateRepositoryImpl::getSynchronizationStateEntity)
-        .collect(Collectors.toList());
-
-
-
-
-    //forEach(row -> getSynchronizationStateEntity(syncStateEntity.getId(), row));
-
-
-  }*/
-
 
   @Override
   public void delete(SessionContext context, VersionContext entityContext,
                      SynchronizationStateEntity syncStateEntity) {
-    // done by version dao
+    getAccessor(context).delete(entityContext.getSpace(), entityContext.getItemId().toString(),
+        syncStateEntity.getId().toString());
   }
 
   @Override
@@ -93,8 +75,9 @@ public class VersionSynchronizationStateRepositoryImpl
   }
 
   private static SynchronizationStateEntity getSynchronizationStateEntity(Row row) {
-    Id entityId = new Id(row.getColumnDefinitions().contains("version_id") ? row.getString
-        ("version_id") : row.getString("element_id"));
+    Id entityId = new Id(row.getColumnDefinitions().contains("version_id")
+        ? row.getString("version_id")
+        : row.getString("element_id"));
     SynchronizationStateEntity syncStateEntity = new SynchronizationStateEntity(entityId,
         new Id(row.getString(REVISION_ID_FIELD)));
     syncStateEntity.setPublishTime(row.getDate(PUBLISH_TIME_FIELD));
@@ -111,23 +94,22 @@ public class VersionSynchronizationStateRepositoryImpl
 
   @Accessor
   interface VersionSyncStateAccessor {
-    @Query(
-        "UPDATE version_elements SET publish_time=? WHERE space=? AND item_id=? AND version_id=? " +
-            "AND revision_id=? ")
-    void updatePublishTime(Date publishTime, String space, String itemId, String versionId, String
-        revisionId);
-
-    @Query("SELECT version_id,revision_id,publish_time, dirty_element_ids FROM version_elements " +
+    @Query("UPDATE version_elements SET publish_time=? " +
         "WHERE space=? AND item_id=? AND version_id=? AND revision_id=? ")
+    void updatePublishTime(Date publishTime, String space, String itemId, String versionId,
+                           String revisionId);
+
+    @Query("SELECT version_id, revision_id, publish_time, dirty_element_ids " +
+        "FROM version_elements WHERE space=? AND item_id=? AND version_id=? AND revision_id=? ")
     ResultSet get(String space, String itemId, String versionId, String revisionId);
 
-    @Query("SELECT version_id,revision_id,publish_time,user,message, dirty_element_ids FROM " +
-        "version_elements " +
-        "WHERE space=? AND item_id=? AND version_id=? ")
+    @Query("SELECT version_id, revision_id, publish_time, user, message, dirty_element_ids " +
+        "FROM version_elements WHERE space=? AND item_id=? AND version_id=? ")
     ResultSet list(String space, String itemId, String versionId);
 
+    @Query("DELETE FROM version_elements WHERE space=? AND item_id=? AND version_id=? ")
+    void delete(String space, String itemId, String versionId);
   }
-
 
   private static final String PUBLISH_TIME_FIELD = "publish_time";
   private static final String DIRTY_ELEMENT_FIELD = "dirty_element_ids";

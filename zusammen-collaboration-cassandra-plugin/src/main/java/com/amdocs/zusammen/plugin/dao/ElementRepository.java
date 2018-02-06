@@ -12,13 +12,21 @@ public interface ElementRepository {
 
   Map<Id,Id> listIds(SessionContext context, ElementEntityContext elementContext);
 
-/*  void createVersionData(SessionContext context, ElementEntityContext elementContext, VersionDataElement element);*/
-
   void create(SessionContext context, ElementEntityContext elementContext, ElementEntity element);
 
   void update(SessionContext context, ElementEntityContext elementContext, ElementEntity element);
 
   void delete(SessionContext context, ElementEntityContext elementContext, ElementEntity element);
+
+  /**
+   * Deletes the entire revisions of an element.
+   * As apposed to delete (which deletes specific element revision) this API does not deletes the
+   * element from the version elements list.
+   * @param context
+   * @param elementContext
+   * @param element
+   */
+  void cleanAllRevisions(SessionContext context, ElementEntityContext elementContext, ElementEntity element);
 
   Optional<ElementEntity> get(SessionContext context, ElementEntityContext elementContext,
                               ElementEntity element);
@@ -31,20 +39,4 @@ public interface ElementRepository {
 
   Optional<Id> getHash(SessionContext context, ElementEntityContext elementEntityContext,
                        ElementEntity element);
-
-
-
-
-/*  Collection<SynchronizationStateEntity> listSynchronizationStates(SessionContext context,
-                                              ElementEntityContext elementContext);
-
-  void updateSynchronizationState(SessionContext context, ElementEntityContext elementContext,
-              SynchronizationStateEntity elementSyncState);
-
-  void markAsDirty(SessionContext context, ElementEntityContext elementContext,
-                   SynchronizationStateEntity elementSyncState);
-
-  Optional<SynchronizationStateEntity> getSynchronizationState(SessionContext context,
-                                           ElementEntityContext elementContext,
-                                           SynchronizationStateEntity elementSyncState);*/
 }

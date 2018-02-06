@@ -40,13 +40,13 @@ public class SynchronizationStateEntity {
   private String user;
   private String message;
 
-  public SynchronizationStateEntity(Id id,Id revisionId) {
+  public SynchronizationStateEntity(Id id, Id revisionId) {
     this.id = id;
     this.revisionId = revisionId;
   }
 
-  public SynchronizationStateEntity(Id id,Id revisionId, Date publishTime, boolean dirty) {
-    this(id,revisionId);
+  public SynchronizationStateEntity(Id id, Id revisionId, Date publishTime, boolean dirty) {
+    this(id, revisionId);
     this.publishTime = publishTime;
     this.dirty = dirty;
   }

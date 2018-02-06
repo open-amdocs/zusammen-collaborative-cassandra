@@ -21,6 +21,7 @@ import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.Action;
 import com.amdocs.zusammen.plugin.dao.ElementStageRepository;
 import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
+import com.amdocs.zusammen.plugin.dao.types.StageEntity;
 import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 import com.amdocs.zusammen.utils.fileutils.json.JsonUtil;
 import com.datastax.driver.core.ResultSet;
@@ -28,7 +29,6 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.mapping.annotations.Accessor;
 import com.datastax.driver.mapping.annotations.Param;
 import com.datastax.driver.mapping.annotations.Query;
-import com.amdocs.zusammen.plugin.dao.types.StageEntity;
 
 import java.nio.ByteBuffer;
 import java.util.Collection;
@@ -155,7 +155,6 @@ public class ElementStageRepositoryImpl implements ElementStageRepository {
   }
 
 
-
   private Collection<ElementEntity> getElements(Set<String> elementIds) {
     return elementIds.stream()
         .map(id -> new ElementEntity(new Id(id)))
@@ -255,7 +254,7 @@ public class ElementStageRepositoryImpl implements ElementStageRepository {
 
   private StageEntity<ElementEntity> getStageElementDescriptor(Row row) {
     return buildStageElement(ElementRepositoryImpl.getElementEntityDescriptor(
-        new ElementEntity(new Id(row.getString(ElementStageField.ID))), row), row);
+        new Id(row.getString(ElementStageField.ID)), row), row);
   }
 
   private StageEntity<ElementEntity> getStageElement(Row row) {

@@ -10,6 +10,10 @@ import java.util.Map;
 
 public interface ElementPublicStore extends ElementStore {
 
+  Map<Id,Id> listIds(SessionContext context, ElementContext elementContext);
+
+  void cleanAll(SessionContext context, ElementContext elementContext);
+
   void create(SessionContext context, ElementContext elementContext, ElementEntity element,
               Date publishTime);
 
@@ -18,6 +22,4 @@ public interface ElementPublicStore extends ElementStore {
 
   void delete(SessionContext context, ElementContext elementContext, ElementEntity element,
               Date publishTime);
-
-  Map<Id,Id> listIds(SessionContext context, ElementContext elementContext);
 }

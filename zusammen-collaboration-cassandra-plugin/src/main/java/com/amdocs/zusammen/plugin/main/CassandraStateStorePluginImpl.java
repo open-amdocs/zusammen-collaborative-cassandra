@@ -28,15 +28,17 @@ import com.amdocs.zusammen.plugin.ZusammenPluginUtil;
 import com.amdocs.zusammen.plugin.collaboration.ElementPrivateStore;
 import com.amdocs.zusammen.plugin.collaboration.impl.ElementPrivateStoreImpl;
 import com.amdocs.zusammen.plugin.dao.ElementRepository;
+import com.amdocs.zusammen.plugin.dao.ElementRepositoryFactory;
 import com.amdocs.zusammen.plugin.dao.VersionDao;
 import com.amdocs.zusammen.plugin.dao.VersionDaoFactory;
 import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
+import com.amdocs.zusammen.plugin.dao.types.VersionDataElement;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 import com.amdocs.zusammen.plugin.statestore.cassandra.StateStoreImpl;
+import com.amdocs.zusammen.plugin.statestore.cassandra.dao.ItemDao;
+import com.amdocs.zusammen.plugin.statestore.cassandra.dao.ItemDaoFactory;
 import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 import com.amdocs.zusammen.sdk.state.types.StateElement;
-import com.amdocs.zusammen.plugin.dao.ElementRepositoryFactory;
-import com.amdocs.zusammen.plugin.dao.types.VersionDataElement;
 
 import java.util.Collection;
 import java.util.Date;
@@ -45,6 +47,14 @@ import java.util.stream.Collectors;
 public class CassandraStateStorePluginImpl extends StateStoreImpl {
 
   private ElementPrivateStore elementPrivateStore = new ElementPrivateStoreImpl();
+
+  @Override
+  public Response<Void> deleteItem(SessionContext context, Id itemId) {
+    getItemDao(context).delete(context, itemId);
+
+    // delete all versions - done by collaboration store
+    return new Response(Void.TYPE);
+  }
 
   @Override
   public Response<Collection<ItemVersion>> listItemVersions(SessionContext context, Space space,
@@ -59,7 +69,8 @@ public class CassandraStateStorePluginImpl extends StateStoreImpl {
   public Response<Boolean> isItemVersionExist(SessionContext context, Space space, Id itemId,
                                               Id versionId) {
     return new Response<>(
-        getVersionDao(context).get(context, ZusammenPluginUtil.getSpaceName(context, space), itemId, versionId)
+        getVersionDao(context)
+            .get(context, ZusammenPluginUtil.getSpaceName(context, space), itemId, versionId)
             .isPresent());
   }
 
@@ -135,12 +146,8 @@ public class CassandraStateStorePluginImpl extends StateStoreImpl {
                                            Id elementId) {
 
     return new Response(elementPrivateStore.get(context, elementContext, elementId)
-        .map(elementEntity -> ZusammenPluginUtil
-            .getStateElement(elementContext, elementEntity))
-        .orElse
-            (null));
-
-
+        .map(elementEntity -> ZusammenPluginUtil.getStateElement(elementContext, elementEntity))
+        .orElse(null));
   }
 
   private ItemVersion getItemVersion(SessionContext context, String spaceName, Id itemId,
@@ -153,6 +160,10 @@ public class CassandraStateStorePluginImpl extends StateStoreImpl {
         .orElseThrow(() -> new IllegalStateException("Version must have data"));
 
     return ZusammenPluginUtil.convertToItemVersion(versionEntity, itemVersionData);
+  }
+
+  protected ItemDao getItemDao(SessionContext context) {
+    return ItemDaoFactory.getInstance().createInterface(context);
   }
 
   protected VersionDao getVersionDao(SessionContext context) {

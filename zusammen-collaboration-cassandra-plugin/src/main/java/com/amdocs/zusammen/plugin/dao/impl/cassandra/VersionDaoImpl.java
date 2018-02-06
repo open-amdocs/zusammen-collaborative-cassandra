@@ -2,12 +2,12 @@ package com.amdocs.zusammen.plugin.dao.impl.cassandra;
 
 import com.amdocs.zusammen.datatypes.Id;
 import com.amdocs.zusammen.datatypes.SessionContext;
+import com.amdocs.zusammen.plugin.dao.VersionDao;
+import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.mapping.annotations.Accessor;
 import com.datastax.driver.mapping.annotations.Query;
-import com.amdocs.zusammen.plugin.dao.VersionDao;
-import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -25,16 +25,12 @@ public class VersionDaoImpl implements VersionDao {
   public void create(SessionContext context, String space, Id itemId, VersionEntity version) {
     String baseVersion = version.getBaseId() != null ? version.getBaseId().toString() : null;
 
-    getAccessor(context)
-        .create(space, itemId.toString(), version.getId().toString(),
-            baseVersion,
-            version.getCreationTime(), version.getModificationTime());
-
+    getAccessor(context).create(space, itemId.toString(), version.getId().toString(), baseVersion,
+        version.getCreationTime(), version.getModificationTime());
   }
 
   @Override
   public void delete(SessionContext context, String space, Id itemId, Id versionId) {
-
     getAccessor(context).delete(space, itemId.toString(), versionId.toString());
   }
 
@@ -57,11 +53,7 @@ public class VersionDaoImpl implements VersionDao {
   @Override
   public Optional<VersionEntity> get(SessionContext context, String space, Id itemId,
                                      Id versionId) {
-    Row row;
-
-    row = getAccessor(context).get(space, itemId.toString(), versionId.toString()).one();
-
-
+    Row row = getAccessor(context).get(space, itemId.toString(), versionId.toString()).one();
     return row == null ? Optional.empty() : Optional.of(convertToVersionEntity(row));
   }
 
@@ -75,14 +67,14 @@ public class VersionDaoImpl implements VersionDao {
   public void createVersionElements(SessionContext context, String space, Id itemId,
                                     Id versionId, Id revisionId, Map<Id, Id> versionElementIds,
                                     Date publishTime, String message) {
-    Map<String, String> elementIds = versionElementIds==null?null:versionElementIds.
-        entrySet().
-        stream().
-        collect(toMap((Map.Entry<Id, Id>entry)->entry.getKey().getValue(),
-                      (Map.Entry<Id, Id>entry)->entry.getValue().getValue()));
+    Map<String, String> elementIds = versionElementIds == null
+        ? null
+        : versionElementIds.entrySet().stream()
+            .collect(toMap((Map.Entry<Id, Id> entry) -> entry.getKey().getValue(),
+                (Map.Entry<Id, Id> entry) -> entry.getValue().getValue()));
 
-    getVersionElementsAccessor(context).create(space,itemId.toString(),versionId.toString(),
-        revisionId.getValue(),elementIds,publishTime,message,context.getUser().getUserName());
+    getVersionElementsAccessor(context).create(space, itemId.toString(), versionId.toString(),
+        revisionId.getValue(), elementIds, publishTime, message, context.getUser().getUserName());
   }
 
 
@@ -167,7 +159,6 @@ public class VersionDaoImpl implements VersionDao {
                 Date publishTime,
                 String message,
                 String user);
-
 
 
   }

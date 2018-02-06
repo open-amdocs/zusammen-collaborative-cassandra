@@ -72,7 +72,7 @@ public class CommitStagingService {
       StageEntity<ElementEntity> stagedElement =
           elementStageStore.get(context, elementContext, stagedElementId)
               .orElseThrow(
-                  () -> new IllegalStateException("Element id returned by list must exist"));
+                  () -> new IllegalStateException("Staged element id returned by list must exist"));
       switch (stagedElement.getAction()) {
         case CREATE:
           elementPrivateStore.commitStagedCreate(context, elementContext, stagedElement.getEntity(),

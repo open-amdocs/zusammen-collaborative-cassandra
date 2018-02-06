@@ -15,6 +15,8 @@ public interface ElementPrivateStore extends ElementStore {
 
   Map<Id, Id> listIds(SessionContext context, ElementContext elementContext);
 
+  void cleanAll(SessionContext context, ElementContext elementContext);
+
   Collection<ElementEntity> listSubs(SessionContext context, ElementContext elementContext,
                                      Id elementId);
 

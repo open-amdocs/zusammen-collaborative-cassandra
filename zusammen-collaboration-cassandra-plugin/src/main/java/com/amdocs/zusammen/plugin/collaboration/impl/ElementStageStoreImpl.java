@@ -4,25 +4,27 @@ import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.Action;
 import com.amdocs.zusammen.datatypes.item.ElementContext;
 import com.amdocs.zusammen.datatypes.item.Resolution;
-import com.amdocs.zusammen.plugin.ZusammenPluginUtil;
 import com.amdocs.zusammen.plugin.collaboration.ElementStageStore;
 import com.amdocs.zusammen.plugin.dao.ElementStageRepository;
-import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
-import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 import com.amdocs.zusammen.plugin.dao.ElementStageRepositoryFactory;
+import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 import com.amdocs.zusammen.plugin.dao.types.StageEntity;
+import com.amdocs.zusammen.plugin.statestore.cassandra.dao.types.ElementEntityContext;
 
 import java.util.Collection;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getPrivateElementContext;
+import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getPrivateSpaceName;
 
 public class ElementStageStoreImpl implements ElementStageStore {
 
   @Override
   public Collection<ElementEntity> listIds(SessionContext context, ElementContext elementContext) {
     return getElementStageRepository(context)
-        .listIds(context, new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context),
-            ZusammenPluginUtil.getPrivateElementContext(elementContext)));
+        .listIds(context, new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext(elementContext)));
   }
 
   @Override
@@ -30,9 +32,8 @@ public class ElementStageStoreImpl implements ElementStageStore {
                                                   ElementContext elementContext,
                                                   ElementEntity element) {
     return getElementStageRepository(context).get(context,
-        new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context),
-            ZusammenPluginUtil.getPrivateElementContext(elementContext)),
-        element);
+        new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext(elementContext)), element);
   }
 
   @Override
@@ -45,42 +46,60 @@ public class ElementStageStoreImpl implements ElementStageStore {
   @Override
   public boolean hasConflicts(SessionContext context, ElementContext elementContext) {
     return !getElementStageRepository(context).listConflictedIds(context,
-        new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context), ZusammenPluginUtil
-            .getPrivateElementContext(elementContext))).isEmpty();
+        new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext(elementContext))).isEmpty();
   }
 
   @Override
   public Collection<StageEntity<ElementEntity>> listConflictedDescriptors(SessionContext context,
                                                                           ElementContext elementContext) {
     ElementEntityContext privateContext =
-        new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context), ZusammenPluginUtil
-            .getPrivateElementContext
-            (elementContext));
+        new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext
+                (elementContext));
     ElementStageRepository elementStageRepository = getElementStageRepository(context);
 
     return elementStageRepository.listConflictedIds(context, privateContext).stream()
-        .map(conflictedElement -> elementStageRepository
-            .getDescriptor(context, privateContext, conflictedElement).get())
+        .map(conflictedElement -> getConflictedDescriptor(context, privateContext,
+            elementStageRepository, conflictedElement))
         .collect(Collectors.toList());
+  }
+
+  private StageEntity<ElementEntity> getConflictedDescriptor(SessionContext context,
+                                                             ElementEntityContext privateContext,
+                                                             ElementStageRepository elementStageRepository,
+                                                             ElementEntity conflictedElement) {
+    return elementStageRepository.getDescriptor(context, privateContext, conflictedElement)
+        .orElseThrow(() -> new IllegalStateException(String.format(
+            "Get staged conflicted element error: " +
+                "Element %s, which appears as a staged conflicted element of item %s version %s, " +
+                "does not exist in stage",
+            conflictedElement.getId(), privateContext.getItemId(), privateContext.getVersionId())));
+  }
+
+  @Override
+  public void deleteAll(SessionContext context, ElementContext elementContext) {
+    for (ElementEntity element : listIds(context, elementContext)) {
+      StageEntity<ElementEntity> stagedElement =
+          get(context, elementContext, element).orElseThrow(
+              () -> new IllegalStateException("Staged element id returned by list must exist"));
+      delete(context, elementContext, stagedElement.getEntity());
+    }
   }
 
   @Override
   public void create(SessionContext context, ElementContext elementContext,
                      StageEntity<ElementEntity> elementStage) {
-    getElementStageRepository(context)
-        .create(context,
-            new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context), ZusammenPluginUtil
-                .getPrivateElementContext(elementContext)),
-            elementStage);
+    getElementStageRepository(context).create(context,
+        new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext(elementContext)), elementStage);
   }
 
   @Override
   public void delete(SessionContext context, ElementContext elementContext, ElementEntity element) {
-    getElementStageRepository(context)
-        .delete(context,
-            new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context), ZusammenPluginUtil
-                .getPrivateElementContext(elementContext)),
-            element);
+    getElementStageRepository(context).delete(context,
+        new ElementEntityContext(getPrivateSpaceName(context),
+            getPrivateElementContext(elementContext)), element);
   }
 
 
@@ -93,10 +112,8 @@ public class ElementStageStoreImpl implements ElementStageStore {
       return;
     }
 
-    ElementEntityContext privateContext =
-        new ElementEntityContext(ZusammenPluginUtil.getPrivateSpaceName(context), ZusammenPluginUtil
-            .getPrivateElementContext
-            (elementContext));
+    ElementEntityContext privateContext = new ElementEntityContext(getPrivateSpaceName(context),
+        getPrivateElementContext(elementContext));
 
     switch (resolution) {
       case YOURS:

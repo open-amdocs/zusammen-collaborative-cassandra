@@ -14,7 +14,7 @@ import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 import com.amdocs.zusammen.plugin.dao.types.VersionContext;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +23,12 @@ import java.util.Optional;
 import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getSpaceName;
 
 public class VersionPublicStoreImpl implements VersionPublicStore {
+
+  @Override
+  public Collection<VersionEntity> list(SessionContext context, Id itemId) {
+    return getVersionDao(context).list(context, getSpaceName(context, Space.PUBLIC), itemId);
+  }
+
   @Override
   public Optional<VersionEntity> get(SessionContext context, Id itemId, Id versionId) {
     return getVersionDao(context)
@@ -32,8 +38,7 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
   @Override
   public Optional<SynchronizationStateEntity> getSynchronizationState(SessionContext context,
                                                                       Id itemId, Id versionId) {
-    Id revisionId = getLastItemVersionRevision(context, itemId,
-        versionId);
+    Id revisionId = getLastItemVersionRevision(context, itemId, versionId);
     if (revisionId == null) {
       return Optional.empty();
     }
@@ -46,32 +51,40 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
 
   @Override
   public void create(SessionContext context, Id itemId, VersionEntity version, Id revisionId,
-                     Map<Id, Id> versionElementIds, Date
-                         publishTime, String message) {
+                     Map<Id, Id> versionElementIds, Date publishTime, String message) {
     String publicSpace = getSpaceName(context, Space.PUBLIC);
 
     getVersionDao(context).create(context, publicSpace, itemId, version);
 
     getVersionDao(context).createVersionElements(context, publicSpace, itemId, version.getId(),
-        revisionId, versionElementIds, publishTime,message);
+        revisionId, versionElementIds, publishTime, message);
 
-    getVersionSyncStateRepository(context).create(context, new VersionContext(publicSpace,
-            itemId),
+    getVersionSyncStateRepository(context).create(context, new VersionContext(publicSpace, itemId),
         new SynchronizationStateEntity(version.getId(), revisionId, publishTime, false));
   }
 
   @Override
-  public void update(SessionContext context, Id itemId, VersionEntity version,
-                     Id revisionId, Map<Id, Id> versionElementIds, Date publishTime, String message) {
+  public void update(SessionContext context, Id itemId, VersionEntity version, Id revisionId,
+                     Map<Id, Id> versionElementIds, Date publishTime, String message) {
     String publicSpace = getSpaceName(context, Space.PUBLIC);
 
     getVersionDao(context).
         createVersionElements(context, publicSpace, itemId, version.getId(),
-            revisionId, versionElementIds, publishTime,message);
+            revisionId, versionElementIds, publishTime, message);
 
     getVersionSyncStateRepository(context).
         updatePublishTime(context, new VersionContext(publicSpace, itemId),
             new SynchronizationStateEntity(version.getId(), revisionId, publishTime, false));
+  }
+
+  @Override
+  public void delete(SessionContext context, Id itemId, VersionEntity version) {
+    String publicSpace = getSpaceName(context, Space.PUBLIC);
+
+    getVersionDao(context).delete(context, publicSpace, itemId, version.getId());
+    getVersionSyncStateRepository(context)
+        .delete(context, new VersionContext(publicSpace, itemId),
+            new SynchronizationStateEntity(version.getId(), null));
   }
 
   @Override
@@ -80,47 +93,36 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
   }
 
   @Override
-  public ItemVersionRevisions listItemVersionRevisions(SessionContext context, Id itemId,
-                                                       Id versionId) {
-    VersionContext entityContext = new VersionContext(getSpaceName(context, Space.PUBLIC), itemId);
-    List<SynchronizationStateEntity> versionRevisions = getVersionSyncStateRepository(context)
-        .list(context, entityContext, new VersionEntity(versionId));
+  public ItemVersionRevisions listRevisions(SessionContext context, Id itemId, Id versionId) {
+    List<SynchronizationStateEntity> revisions = getVersionSyncStateRepository(context)
+        .list(context, new VersionContext(getSpaceName(context, Space.PUBLIC), itemId),
+            new SynchronizationStateEntity(versionId, null));
 
-    if (versionRevisions == null || versionRevisions.size() == 0) {
+    if (revisions == null || revisions.isEmpty()) {
       return null;
     }
 
-    versionRevisions.sort(new Comparator<SynchronizationStateEntity>() {
-      @Override
-      public int compare(SynchronizationStateEntity o1, SynchronizationStateEntity o2) {
-        if (o1.getPublishTime().after(o2.getPublishTime())) {
-          return -1;
-        } else {
-          return 1;
-        }
-      }
-    });
+    revisions.sort((o1, o2) -> o1.getPublishTime().after(o2.getPublishTime()) ? -1 : 1);
     ItemVersionRevisions itemVersionRevisions = new ItemVersionRevisions();
-    versionRevisions.forEach(synchronizationStateEntity -> itemVersionRevisions.addChange
-        (convertSyncState2Revision(synchronizationStateEntity)));
+    revisions.forEach(synchronizationStateEntity ->
+        itemVersionRevisions.addChange(convertSyncStateToRevision(synchronizationStateEntity)));
     return itemVersionRevisions;
   }
 
-  private Revision convertSyncState2Revision(
-      SynchronizationStateEntity synchronizationStateEntity) {
+  private Revision convertSyncStateToRevision(SynchronizationStateEntity syncState) {
     Revision revision = new Revision();
-    revision.setRevisionId(synchronizationStateEntity.getRevisionId());
-    revision.setTime(synchronizationStateEntity.getPublishTime());
-    revision.setMessage(synchronizationStateEntity.getMessage());
-    revision.setUser(synchronizationStateEntity.getUser());
+    revision.setRevisionId(syncState.getRevisionId());
+    revision.setTime(syncState.getPublishTime());
+    revision.setMessage(syncState.getMessage());
+    revision.setUser(syncState.getUser());
     return revision;
   }
 
-
   private Id getLastItemVersionRevision(SessionContext context, Id itemId, Id versionId) {
-
-    ItemVersionRevisions versionRevisions = listItemVersionRevisions(context, itemId, versionId);
-    if(versionRevisions ==null ) return null;
+    ItemVersionRevisions versionRevisions = listRevisions(context, itemId, versionId);
+    if (versionRevisions == null) {
+      return null;
+    }
     return versionRevisions.getItemVersionRevisions().get(0).getRevisionId();
   }
 

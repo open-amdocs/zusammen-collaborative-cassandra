@@ -11,6 +11,7 @@ import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 import com.amdocs.zusammen.plugin.dao.types.VersionContext;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.Optional;
 
@@ -18,7 +19,12 @@ import static com.amdocs.zusammen.plugin.ZusammenPluginUtil.getPrivateSpaceName;
 
 public class VersionPrivateStoreImpl implements VersionPrivateStore {
 
-  Id revisionId = Id.ZERO;
+  private Id revisionId = Id.ZERO;
+
+  @Override
+  public Collection<VersionEntity> list(SessionContext context, Id itemId) {
+    return getVersionDao(context).list(context, getPrivateSpaceName(context), itemId);
+  }
 
   @Override
   public Optional<VersionEntity> get(SessionContext context, Id itemId, Id versionId) {
@@ -28,7 +34,6 @@ public class VersionPrivateStoreImpl implements VersionPrivateStore {
   @Override
   public Optional<SynchronizationStateEntity> getSynchronizationState(SessionContext context,
                                                                       Id itemId, Id versionId) {
-
     return getVersionSyncStateRepository(context)
         .get(context, new VersionContext(getPrivateSpaceName(context), itemId),
             new SynchronizationStateEntity(versionId, revisionId));
@@ -38,16 +43,13 @@ public class VersionPrivateStoreImpl implements VersionPrivateStore {
   public void create(SessionContext context, Id itemId, VersionEntity version) {
     String privateSpace = getPrivateSpaceName(context);
 
-
     getVersionDao(context).create(context, privateSpace, itemId, version);
-    getVersionSyncStateRepository(context).create(context, new VersionContext(privateSpace,
-            itemId),
+    getVersionSyncStateRepository(context).create(context, new VersionContext(privateSpace, itemId),
         new SynchronizationStateEntity(version.getId(), revisionId, null, true));
   }
 
   @Override
   public void update(SessionContext context, Id itemId, VersionEntity version) {
-
     getVersionDao(context)
         .updateModificationTime(context, getPrivateSpaceName(context), itemId, version.getId(),
             version.getModificationTime());
@@ -102,9 +104,6 @@ public class VersionPrivateStoreImpl implements VersionPrivateStore {
         new VersionContext(getPrivateSpaceName(context), itemId),
         new SynchronizationStateEntity(version.getId(), revisionId, publishTime, false));
   }
-
-
-
 
   protected VersionDao getVersionDao(SessionContext context) {
     return VersionDaoFactory.getInstance().createInterface(context);

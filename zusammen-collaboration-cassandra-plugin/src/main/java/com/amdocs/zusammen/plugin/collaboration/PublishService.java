@@ -50,8 +50,8 @@ public class PublishService {
 
     Date publishTime = new Date();
     Id revisionId = new Id(UUID.randomUUID().toString());
-    boolean versionFirstPublication = publishVersion(context, itemId, versionId, revisionId,
-        publishTime,message);
+    boolean versionFirstPublication =
+        publishVersion(context, itemId, versionId, revisionId, publishTime, message);
     if (versionFirstPublication) {
       publishAllElements(context, new ElementContext(itemId, versionId, revisionId), publishTime,
           result);
@@ -87,18 +87,17 @@ public class PublishService {
 
     boolean versionFirstPublication;
     Map<Id, Id> versionElementIds =
-        elementPublicStore.listIds(context, new ElementContext(itemId,
-            versionId));
+        elementPublicStore.listIds(context, new ElementContext(itemId, versionId));
     if (publicVersionSyncState.isPresent()) {
       versionPublicStore.update(context, itemId, new VersionEntity(versionId), revisionId,
-          versionElementIds,publishTime,message);
+          versionElementIds, publishTime, message);
       versionFirstPublication = false;
     } else {
       VersionEntity privateVersion = versionPrivateStore.get(context, itemId, versionId)
           .orElseThrow(() -> new IllegalArgumentException(
               String.format(PUSH_NON_EXISTING_VERSION, itemId.toString(), versionId.toString())));
-      versionPublicStore.create(context, itemId, privateVersion, revisionId,versionElementIds,
-          publishTime,message);
+      versionPublicStore.create(context, itemId, privateVersion, revisionId, versionElementIds,
+          publishTime, message);
       versionFirstPublication = true;
     }
     versionPrivateStore.markAsPublished(context, itemId, versionId, publishTime);
@@ -128,17 +127,15 @@ public class PublishService {
             .markAsPublished(context, elementContext, privateElementSyncState.getId(), publishTime);
       }
       updateResult(elementContext, elementToPublish, Action.CREATE,
-          ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID.equals(privateElementSyncState.getId()), result);
+          ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID.equals(privateElementSyncState.getId()),
+          result);
     }
   }
 
   private void publishDirtyElements(SessionContext context, ElementContext elementContext,
                                     Date publishTime, CollaborationPublishResult result) {
-
-    Id revisionId = elementContext.getRevisionId();
-    elementContext.setRevisionId(revisionId);
     ElementContext privateElementContext = new ElementContext(elementContext.getItemId(),
-        elementContext.getVersionId(),Id.ZERO);
+        elementContext.getVersionId(), Id.ZERO);
     Collection<SynchronizationStateEntity> privateElementSyncStates =
         elementPrivateStore.listSynchronizationStates(context, elementContext);
 
@@ -168,7 +165,8 @@ public class PublishService {
         }
 
         elementPrivateStore
-            .markAsPublished(context, privateElementContext, privateElementSyncState.getId(), publishTime);
+            .markAsPublished(context, privateElementContext, privateElementSyncState.getId(),
+                publishTime);
       } else {
         elementToPublish =
             elementPublicStore.get(context, elementContext, privateElementSyncState.getId())
@@ -178,12 +176,14 @@ public class PublishService {
         actionOnPublic = Action.DELETE;
 
         elementPrivateStore
-            .markDeletionAsPublished(context, privateElementContext, privateElementSyncState.getId(),
+            .markDeletionAsPublished(context, privateElementContext,
+                privateElementSyncState.getId(),
                 publishTime);
       }
 
       updateResult(elementContext, elementToPublish, actionOnPublic,
-          ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID.equals(privateElementSyncState.getId()), result);
+          ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID.equals(privateElementSyncState.getId()),
+          result);
     }
   }
 
