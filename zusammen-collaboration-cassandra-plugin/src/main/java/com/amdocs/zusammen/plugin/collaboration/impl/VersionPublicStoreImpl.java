@@ -80,7 +80,8 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
   public void update(SessionContext context, Id itemId, VersionEntity version, Id revisionId,
                      Map<Id, Id> versionElementIds, Date publishTime, String message) {
     String publicSpace = getSpaceName(context, Space.PUBLIC);
-
+    getVersionDao(context)
+        .updateModificationTime(context, publicSpace, itemId, version.getId(), publishTime);
     getVersionDao(context).
         createVersionElements(context, publicSpace, itemId, version.getId(),
             revisionId, versionElementIds, publishTime, message);
