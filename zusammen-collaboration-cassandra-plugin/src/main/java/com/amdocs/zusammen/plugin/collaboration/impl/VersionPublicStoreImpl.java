@@ -3,8 +3,6 @@ package com.amdocs.zusammen.plugin.collaboration.impl;
 import com.amdocs.zusammen.datatypes.Id;
 import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.Space;
-import com.amdocs.zusammen.datatypes.itemversion.ItemVersionRevisions;
-import com.amdocs.zusammen.datatypes.itemversion.Revision;
 import com.amdocs.zusammen.plugin.collaboration.VersionPublicStore;
 import com.amdocs.zusammen.plugin.dao.VersionDao;
 import com.amdocs.zusammen.plugin.dao.VersionDaoFactory;
@@ -36,11 +34,26 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
   }
 
   @Override
+  public List<SynchronizationStateEntity> listSynchronizationStates(SessionContext context,
+                                                                    Id itemId, Id versionId) {
+    List<SynchronizationStateEntity> syncStates = getVersionSyncStateRepository(context)
+        .list(context, new VersionContext(getSpaceName(context, Space.PUBLIC), itemId),
+            new SynchronizationStateEntity(versionId, null));
+    syncStates.sort((o1, o2) -> o1.getPublishTime().after(o2.getPublishTime()) ? -1 : 1);
+    return syncStates;
+  }
+
+  @Override
   public Optional<SynchronizationStateEntity> getSynchronizationState(SessionContext context,
-                                                                      Id itemId, Id versionId) {
-    Id revisionId = getLastItemVersionRevision(context, itemId, versionId);
+                                                                      Id itemId, Id versionId,
+                                                                      Id revisionId) {
     if (revisionId == null) {
-      return Optional.empty();
+      Optional<SynchronizationStateEntity> lastSyncState =
+          getLastSynchronizationState(context, itemId, versionId);
+      if (!lastSyncState.isPresent()) {
+        return Optional.empty();
+      }
+      revisionId = lastSyncState.get().getRevisionId();
     }
 
     return getVersionSyncStateRepository(context)
@@ -92,38 +105,14 @@ public class VersionPublicStoreImpl implements VersionPublicStore {
     return getVersionDao(context).checkHealth(context);
   }
 
-  @Override
-  public ItemVersionRevisions listRevisions(SessionContext context, Id itemId, Id versionId) {
-    List<SynchronizationStateEntity> revisions = getVersionSyncStateRepository(context)
-        .list(context, new VersionContext(getSpaceName(context, Space.PUBLIC), itemId),
-            new SynchronizationStateEntity(versionId, null));
-
-    if (revisions == null || revisions.isEmpty()) {
-      return null;
-    }
-
-    revisions.sort((o1, o2) -> o1.getPublishTime().after(o2.getPublishTime()) ? -1 : 1);
-    ItemVersionRevisions itemVersionRevisions = new ItemVersionRevisions();
-    revisions.forEach(synchronizationStateEntity ->
-        itemVersionRevisions.addChange(convertSyncStateToRevision(synchronizationStateEntity)));
-    return itemVersionRevisions;
-  }
-
-  private Revision convertSyncStateToRevision(SynchronizationStateEntity syncState) {
-    Revision revision = new Revision();
-    revision.setRevisionId(syncState.getRevisionId());
-    revision.setTime(syncState.getPublishTime());
-    revision.setMessage(syncState.getMessage());
-    revision.setUser(syncState.getUser());
-    return revision;
-  }
-
-  private Id getLastItemVersionRevision(SessionContext context, Id itemId, Id versionId) {
-    ItemVersionRevisions versionRevisions = listRevisions(context, itemId, versionId);
-    if (versionRevisions == null) {
-      return null;
-    }
-    return versionRevisions.getItemVersionRevisions().get(0).getRevisionId();
+  private Optional<SynchronizationStateEntity> getLastSynchronizationState(SessionContext context,
+                                                                           Id itemId,
+                                                                           Id versionId) {
+    List<SynchronizationStateEntity> syncStates =
+        listSynchronizationStates(context, itemId, versionId);
+    return syncStates.isEmpty() ?
+        Optional.empty() :
+        Optional.of(syncStates.get(0));
   }
 
   protected VersionDao getVersionDao(SessionContext context) {

@@ -40,6 +40,7 @@ import com.amdocs.zusammen.datatypes.response.ReturnCode;
 import com.amdocs.zusammen.datatypes.response.ZusammenException;
 import com.amdocs.zusammen.plugin.ZusammenPluginUtil;
 import com.amdocs.zusammen.plugin.collaboration.CommitStagingService;
+import com.amdocs.zusammen.plugin.collaboration.DiscardChangesService;
 import com.amdocs.zusammen.plugin.collaboration.ElementPrivateStore;
 import com.amdocs.zusammen.plugin.collaboration.ElementPublicStore;
 import com.amdocs.zusammen.plugin.collaboration.ElementStageStore;
@@ -83,7 +84,6 @@ import static com.amdocs.zusammen.plugin.ZusammenPluginConstants.ROOT_ELEMENTS_P
 
 public class CassandraCollaborationStorePluginImpl implements CollaborationStore {
   // TODO: 8/15/2017 inject
-
   private VersionPrivateStore versionPrivateStore = new VersionPrivateStoreImpl();
   private VersionPublicStore versionPublicStore = new VersionPublicStoreImpl();
   private VersionStageStore versionStageStore = new VersionStageStoreImpl();
@@ -93,16 +93,18 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   private ElementStageStore elementStageStore = new ElementStageStoreImpl();
 
   // TODO: 9/4/2017
-  private CommitStagingService commitStagingService =
-      new CommitStagingService(versionPrivateStore, versionStageStore, elementPrivateStore,
-          elementStageStore);
   private PublishService publishService =
       new PublishService(versionPublicStore, versionPrivateStore, elementPublicStore,
           elementPrivateStore);
+  private DiscardChangesService discardChangesService =
+      new DiscardChangesService(versionPublicStore, versionPrivateStore, elementPublicStore,
+          elementPrivateStore, elementStageStore);
   private SyncService syncService =
       new SyncService(versionPublicStore, versionPrivateStore, versionStageStore,
           elementPublicStore, elementPrivateStore, elementStageStore);
-
+  private CommitStagingService commitStagingService =
+      new CommitStagingService(versionPrivateStore, versionStageStore, elementPrivateStore,
+          elementStageStore);
   private RevertService revertService =
       new RevertService(elementPublicStore, elementPrivateStore);
 
@@ -184,7 +186,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
     }
 
     Optional<SynchronizationStateEntity> publicSyncState =
-        versionPublicStore.getSynchronizationState(context, itemId, versionId);
+        versionPublicStore.getSynchronizationState(context, itemId, versionId, null);
 
     if (!publicSyncState.isPresent()) {
       return new Response<>(new ItemVersionStatus(UP_TO_DATE, true));
@@ -233,7 +235,7 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   @Override
   public Response<CollaborationMergeResult> syncItemVersion(SessionContext context, Id itemId,
                                                             Id versionId) {
-    CollaborationMergeResult result = syncService.sync(context, itemId, versionId, false);
+    CollaborationMergeResult result = syncService.sync(context, itemId, versionId);
     commitStagingService.commitStaging(context, itemId, versionId);
 
     return new Response<>(result);
@@ -242,10 +244,8 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   @Override
   public Response<CollaborationMergeResult> forceSyncItemVersion(SessionContext context, Id itemId,
                                                                  Id versionId) {
-    CollaborationMergeResult result = syncService.sync(context, itemId, versionId, true);
-    commitStagingService.commitStaging(context, itemId, versionId);
-
-    return new Response<>(result);
+    discardItemVersionChanges(context, itemId, versionId);
+    return syncItemVersion(context, itemId, versionId);
   }
 
   @Override
@@ -279,7 +279,14 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   @Override
   public Response<ItemVersionRevisions> listItemVersionRevisions(SessionContext context, Id itemId,
                                                                  Id versionId) {
-    return new Response<>(versionPublicStore.listRevisions(context, itemId, versionId));
+    List<SynchronizationStateEntity> syncStates =
+        versionPublicStore.listSynchronizationStates(context, itemId, versionId);
+
+    ItemVersionRevisions itemVersionRevisions = new ItemVersionRevisions();
+    syncStates.forEach(
+        syncState -> itemVersionRevisions.addChange(convertSyncStateToRevision(syncState)));
+
+    return new Response<>(itemVersionRevisions);
   }
 
   @Override
@@ -297,27 +304,30 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
 
   }
 
+  /**
+   * Changes private content to be equal to the specified revision.
+   * The changes required in order to do so are marked as dirty.
+   * (do not confuse with reset which is moving back to a specified revision - without dirty)
+   */
   @Override
   public Response<CollaborationMergeChange> revertItemVersionRevision(SessionContext context,
                                                                       Id itemId, Id versionId,
                                                                       Id revisionId) {
     Optional<ItemVersion> itemVersion = getItemVersion(context, itemId, versionId, revisionId);
     if (!itemVersion.isPresent()) {
-      throw new RuntimeException(String
-          .format("Item %s, version %s: Cannot revert to revision %s since it is not found",
-              itemId, versionId, revisionId));
+      throw new IllegalArgumentException(String
+          .format("Item %s, version %s: Cannot revert to revision %s since it is not found", itemId,
+              versionId, revisionId));
     }
 
     // TODO: 12/4/2017 force sync is done in order to clear dirty element on private
     // this is temp solution that should be fixed.
     forceSyncItemVersion(context, itemId, versionId);
 
-    //updateItemVersion(context, itemId, versionId, itemVersion.get().getData());
     revertService.revert(context, itemId, versionId, revisionId);
 
     return new Response<>(new CollaborationMergeChange());
   }
-
 
   @Override
   public Response<Void> commitElements(SessionContext context, Id itemId, Id versionId, String s) {
@@ -411,6 +421,11 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
         : new HealthInfo(Module.ZCSP.getDescription(), HealthStatus.DOWN, "No Schema Available");
 
     return new Response<>(healthInfo);
+  }
+
+  private void discardItemVersionChanges(SessionContext context, Id itemId, Id versionId) {
+    discardChangesService.discardChanges(context, itemId, versionId);
+    commitStagingService.commitStaging(context, itemId, versionId);
   }
 
   private Optional<ItemVersion> getItemVersion(SessionContext context, Id itemId, Id versionId,
@@ -525,5 +540,14 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
         break;
     }
     return conflict;
+  }
+
+  private Revision convertSyncStateToRevision(SynchronizationStateEntity syncState) {
+    Revision revision = new Revision();
+    revision.setRevisionId(syncState.getRevisionId());
+    revision.setTime(syncState.getPublishTime());
+    revision.setMessage(syncState.getMessage());
+    revision.setUser(syncState.getUser());
+    return revision;
   }
 }

@@ -4,14 +4,13 @@ import com.amdocs.zusammen.datatypes.Id;
 import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.Action;
 import com.amdocs.zusammen.datatypes.item.ElementContext;
-import com.amdocs.zusammen.plugin.ZusammenPluginConstants;
-import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeChange;
-import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeConflict;
-import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeResult;
 import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 import com.amdocs.zusammen.plugin.dao.types.StageEntity;
 import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 import com.amdocs.zusammen.plugin.dao.types.VersionEntity;
+import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeChange;
+import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeConflict;
+import com.amdocs.zusammen.sdk.collaboration.types.CollaborationMergeResult;
 
 import java.util.Collection;
 import java.util.Date;
@@ -24,15 +23,17 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static com.amdocs.zusammen.plugin.ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID;
+
 public class SyncService {
   private static final String PULL_NON_EXISTING_VERSION =
       "Item Id %s, version Id %s: Non existing version cannot be synced.";
   private static final String PUBLIC_SYNC_STATE_EXISTS_WITHOUT_ELEMENT =
       "Item Id %s, version Id %s: Sync state of element with Id %s " +
           "exists in public space while the element does not";
-  private static final String PRIVATE_UNPUBLISHED_SYNC_STATE_EXISTS_WITHOUT_ELEMENT =
-      "Item Id %s, version Id %s: Sync state of unpublished element with Id %s " +
-          "exists in private space while the element does not";
+  private static final String ELEMENT_TO_STAGE_NOT_EXIST =
+      "Item Id %s, version Id %s: Element with Id %s which should be staged with action %s " +
+          "does not exist";
 
   private VersionPublicStore versionPublicStore;
   private VersionPrivateStore versionPrivateStore;
@@ -55,11 +56,10 @@ public class SyncService {
     this.elementStageStore = elementStageStore;
   }
 
-  public CollaborationMergeResult sync(SessionContext context, Id itemId, Id versionId,
-                                       boolean force) {
+  public CollaborationMergeResult sync(SessionContext context, Id itemId, Id versionId) {
     SynchronizationStateEntity publicVersionSyncState =
-        versionPublicStore.getSynchronizationState(context, itemId, versionId)
-            .orElseThrow(() -> new IllegalStateException(
+        versionPublicStore.getSynchronizationState(context, itemId, versionId, null)
+            .orElseThrow(() -> new UnsupportedOperationException(
                 String.format(PULL_NON_EXISTING_VERSION, itemId.toString(), versionId.toString())));
 
     Date publishTime = publicVersionSyncState.getPublishTime();
@@ -67,37 +67,18 @@ public class SyncService {
     Optional<SynchronizationStateEntity> privateVersionSyncState =
         versionPrivateStore.getSynchronizationState(context, itemId, versionId);
 
-    if (force || !privateVersionSyncState.isPresent() ||
-        !publishTime.equals(privateVersionSyncState.get().getPublishTime())) {
-      ElementContext elementContext =
-          new ElementContext(itemId, versionId, publicVersionSyncState.getRevisionId());
-
-      Collection<SynchronizationStateEntity> publicSyncStates =
-          elementPublicStore.listSynchronizationStates(context, elementContext);
-      Collection<SynchronizationStateEntity> privateSyncStates =
-          elementPrivateStore.listSynchronizationStates(context, elementContext);
-      Map<Id, SynchronizationStateEntity> publicSyncStateById = toMapById(publicSyncStates);
-
-      Set<Id> syncedElements = new HashSet<>();
-      if (force) {
-        List<SynchronizationStateEntity> dirtyPrivateSyncStates = privateSyncStates.stream()
-            .filter(SynchronizationStateEntity::isDirty)
-            .collect(Collectors.toList());
-
-        forceSyncDirtyElements(context, elementContext, dirtyPrivateSyncStates, publicSyncStateById,
-            syncedElements);
-      }
-
-      if (!privateVersionSyncState.isPresent() ||
-          !publishTime.equals(privateVersionSyncState.get().getPublishTime())) {
-        syncVersion(context, itemId, versionId, publishTime, privateVersionSyncState.isPresent());
-        syncElements(context, elementContext,
-            privateVersionSyncState.map(SynchronizationStateEntity::getPublishTime).orElse(null),
-            publicSyncStates, privateSyncStates, publicSyncStateById, syncedElements);
-      }
+    CollaborationMergeResult result = createResult();
+    if (privateVersionSyncState.isPresent() &&
+        publishTime.equals(privateVersionSyncState.get().getPublishTime())) {
+      return result;
     }
 
-    return createResult();
+    syncVersion(context, itemId, versionId, publishTime, privateVersionSyncState.isPresent());
+    syncElements(context,
+        new ElementContext(itemId, versionId, publicVersionSyncState.getRevisionId()),
+        privateVersionSyncState.map(SynchronizationStateEntity::getPublishTime).orElse(null));
+
+    return result;
   }
 
   private CollaborationMergeResult createResult() {
@@ -120,11 +101,13 @@ public class SyncService {
   }
 
   private void syncElements(SessionContext context, ElementContext elementContext,
-                            Date previousSyncedPublishTime,
-                            Collection<SynchronizationStateEntity> publicSyncStates,
-                            Collection<SynchronizationStateEntity> privateSyncStates,
-                            Map<Id, SynchronizationStateEntity> publicSyncStateById,
-                            Set<Id> syncedElements) {
+                            Date previousSyncedPublishTime) {
+    Collection<SynchronizationStateEntity> publicSyncStates =
+        elementPublicStore.listSynchronizationStates(context, elementContext);
+    Collection<SynchronizationStateEntity> privateSyncStates =
+        elementPrivateStore.listSynchronizationStates(context, elementContext);
+
+    Map<Id, SynchronizationStateEntity> publicSyncStateById = toMapById(publicSyncStates);
     Map<Id, SynchronizationStateEntity> privateSyncStateById = toMapById(privateSyncStates);
 
     Collection<SynchronizationStateEntity> updatedPublicSyncStates =
@@ -135,7 +118,7 @@ public class SyncService {
                 .collect(Collectors.toList());
 
     syncPublicUpdatedElements(context, elementContext, updatedPublicSyncStates,
-        publicSyncStateById, privateSyncStateById, syncedElements);
+        publicSyncStateById, privateSyncStateById);
 
     List<SynchronizationStateEntity> onlyOnPrivatePublishedSyncStates =
         privateSyncStates.stream()
@@ -144,26 +127,24 @@ public class SyncService {
             .collect(Collectors.toList());
 
     syncPublicDeletedElements(context, elementContext, onlyOnPrivatePublishedSyncStates,
-        publicSyncStateById, privateSyncStateById, syncedElements);
+        publicSyncStateById, privateSyncStateById);
   }
 
   private void syncPublicUpdatedElements(SessionContext context, ElementContext elementContext,
                                          Collection<SynchronizationStateEntity> updatedPublicSyncStates,
                                          Map<Id, SynchronizationStateEntity> publicSyncStateById,
-                                         Map<Id, SynchronizationStateEntity> privateSyncStateById,
-                                         Set<Id> syncedElements) {
+                                         Map<Id, SynchronizationStateEntity> privateSyncStateById) {
+    Set<Id> syncedElements = new HashSet<>();
     for (SynchronizationStateEntity publicSyncState : updatedPublicSyncStates) {
       if (syncedElements.contains(publicSyncState.getId())) {
         continue;
       }
 
       ElementEntity publicElement =
-          elementPublicStore.get(context, elementContext, publicSyncState.getId()).orElseThrow(
-              () -> new IllegalStateException(String
-                  .format(PUBLIC_SYNC_STATE_EXISTS_WITHOUT_ELEMENT,
-                      elementContext.getItemId().getValue(),
-                      elementContext.getVersionId().getValue(),
-                      publicSyncState.getId().getValue())));
+          elementPublicStore.get(context, elementContext, publicSyncState.getId())
+              .orElseThrow(() -> new IllegalStateException(String
+                  .format(PUBLIC_SYNC_STATE_EXISTS_WITHOUT_ELEMENT, elementContext.getItemId(),
+                      elementContext.getVersionId(), publicSyncState.getId())));
 
       SynchronizationStateEntity privateSyncState =
           privateSyncStateById.get(publicSyncState.getId());
@@ -191,7 +172,7 @@ public class SyncService {
             // deleted on private - conflict tree
             Set<Id> changeTreeElementIds =
                 stagePublicElementTree(context, elementContext, publicElement, publicSyncStateById,
-                    (treeElementIds) -> true);
+                    treeElementIds -> true);
             syncedElements.addAll(changeTreeElementIds);
           }
         }
@@ -199,7 +180,7 @@ public class SyncService {
         // not existing on private - new creation on public
         Set<Id> changeTreeElementIds =
             stagePublicElementTree(context, elementContext, publicElement, publicSyncStateById,
-                (treeElementIds) -> containsDirty(treeElementIds, privateSyncStateById));
+                treeElementIds -> containsDirty(treeElementIds, privateSyncStateById));
         syncedElements.addAll(changeTreeElementIds);
       }
     }
@@ -209,8 +190,8 @@ public class SyncService {
       SessionContext context, ElementContext elementContext,
       Collection<SynchronizationStateEntity> onlyOnPrivatePublishedSyncStates,
       Map<Id, SynchronizationStateEntity> publicSyncStateById,
-      Map<Id, SynchronizationStateEntity> privateSyncStateById,
-      Set<Id> syncedElements) {
+      Map<Id, SynchronizationStateEntity> privateSyncStateById) {
+    Set<Id> syncedElements = new HashSet<>();
     for (SynchronizationStateEntity privateSyncState : onlyOnPrivatePublishedSyncStates) {
       if (syncedElements.contains(privateSyncState.getId())) {
         continue;
@@ -228,50 +209,10 @@ public class SyncService {
         Set<Id> changeTreeElementIds =
             stageElementTree(context, elementContext, privateElement.get(),
                 elementPrivateStore, publicSyncStateById::containsKey,
-                (treeElementIds) -> containsDirty(treeElementIds, privateSyncStateById),
-                (elementId) -> null, Action.DELETE);
+                treeElementIds -> containsDirty(treeElementIds, privateSyncStateById),
+                elementId -> null, Action.DELETE);
         syncedElements.addAll(changeTreeElementIds);
       }
-    }
-  }
-
-  private void forceSyncDirtyElements(SessionContext context, ElementContext elementContext,
-                                      List<SynchronizationStateEntity> dirtyPrivateSyncStates,
-                                      Map<Id, SynchronizationStateEntity> publicSyncStateById,
-                                      Set<Id> syncedElements) {
-    for (SynchronizationStateEntity privateSyncState : dirtyPrivateSyncStates) {
-      Optional<ElementEntity> privateElement =
-          elementPrivateStore.get(context, elementContext, privateSyncState.getId());
-      if (privateSyncState.getPublishTime() == null) {
-        stageElement(context, elementContext,
-            privateElement.orElseThrow(() -> new IllegalStateException(
-                String.format(PRIVATE_UNPUBLISHED_SYNC_STATE_EXISTS_WITHOUT_ELEMENT,
-                    elementContext.getItemId().getValue(),
-                    elementContext.getVersionId().getValue(),
-                    privateSyncState.getId().getValue()))),
-            null, Action.DELETE, false, null);
-      } else {
-        SynchronizationStateEntity publicSyncState =
-            publicSyncStateById.get(privateSyncState.getId());
-        if (publicSyncState != null) {
-          ElementEntity publicElement =
-              elementPublicStore.get(context, elementContext, privateSyncState.getId()).orElseThrow(
-                  () -> new IllegalStateException(String
-                      .format(PUBLIC_SYNC_STATE_EXISTS_WITHOUT_ELEMENT,
-                          elementContext.getItemId().getValue(),
-                          elementContext.getVersionId().getValue(),
-                          privateSyncState.getId().getValue())));
-
-          stageElement(context, elementContext, publicElement, publicSyncState.getPublishTime(),
-              privateElement.isPresent() ? Action.UPDATE : Action.CREATE, false, null);
-        } else {
-          stageElement(context, elementContext, privateElement.isPresent()
-                  ? privateElement.get()
-                  : new ElementEntity(privateSyncState.getId()),
-              null, Action.DELETE, false, null);
-        }
-      }
-      syncedElements.add(privateSyncState.getId());
     }
   }
 
@@ -280,14 +221,12 @@ public class SyncService {
                                          ElementEntity publicElement,
                                          Map<Id, SynchronizationStateEntity> publicSyncStateById,
                                          Predicate<Set<Id>> isElementTreeConflicted) {
-
-
     return stageElementTree(context, elementContext, publicElement,
         elementPublicStore,
-        (elementId) -> elementPrivateStore.getDescriptor(context, elementContext, elementId)
+        elementId -> elementPrivateStore.getDescriptor(context, elementContext, elementId)
             .isPresent(),
         isElementTreeConflicted,
-        (elementId) -> publicSyncStateById.get(elementId).getPublishTime(),
+        elementId -> publicSyncStateById.get(elementId).getPublishTime(),
         Action.CREATE);
   }
 
@@ -320,7 +259,7 @@ public class SyncService {
                                                 ElementStore elementStore,
                                                 Predicate<Id> isElementExistOnOppositeStore,
                                                 ElementEntity element) {
-    return element.getId().equals(ZusammenPluginConstants.ROOT_ELEMENTS_PARENT_ID) ||
+    return element.getId().equals(ROOT_ELEMENTS_PARENT_ID) ||
         isElementExistOnOppositeStore.test(element.getParentId())
         ? element
         : findRootElementOfChange(context, elementContext, elementStore,
@@ -344,7 +283,10 @@ public class SyncService {
                                    Function<Id, Date> stagePublishTimeGetter, Action stageAction) {
     Set<Id> elementTreeIds = new HashSet<>();
     for (Id elementId : parentElement.getSubElementIds()) {
-      ElementEntity element = elementStore.get(context, elementContext, elementId).get();
+      ElementEntity element = elementStore.get(context, elementContext, elementId)
+          .orElseThrow(() -> new IllegalStateException(String
+              .format(ELEMENT_TO_STAGE_NOT_EXIST, elementContext.getItemId(),
+                  elementContext.getVersionId(), elementId, stageAction)));
 
       stageElement(context, elementContext, element, stagePublishTimeGetter.apply(elementId),
           stageAction, false, null);

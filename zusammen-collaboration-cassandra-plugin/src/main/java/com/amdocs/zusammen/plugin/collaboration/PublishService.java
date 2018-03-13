@@ -75,7 +75,7 @@ public class PublishService {
     }
 
     Optional<SynchronizationStateEntity> publicVersionSyncState =
-        versionPublicStore.getSynchronizationState(context, itemId, versionId);
+        versionPublicStore.getSynchronizationState(context, itemId, versionId, null);
 
     // private must be synced with public (if public exists)
     if (publicVersionSyncState.isPresent() &&

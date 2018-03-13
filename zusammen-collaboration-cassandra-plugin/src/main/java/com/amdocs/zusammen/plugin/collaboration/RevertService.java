@@ -3,14 +3,12 @@ package com.amdocs.zusammen.plugin.collaboration;
 import com.amdocs.zusammen.datatypes.Id;
 import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.ElementContext;
-import com.amdocs.zusammen.plugin.dao.types.ElementEntity;
 import com.amdocs.zusammen.plugin.dao.types.SynchronizationStateEntity;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 public class RevertService {
 
@@ -52,10 +50,7 @@ public class RevertService {
 
     Collection<RevertElementAction> revertElementActions = new ArrayList<>();
 
-    sourceElements.entrySet().forEach(entry -> {
-      Id sourceElementId = entry.getKey();
-      Id sourceElementRevisionId = entry.getValue();
-
+    sourceElements.forEach((sourceElementId, sourceElementRevisionId) -> {
       if (!targetElements.containsKey(sourceElementId)) {
         revertElementActions
             .add(new RevertElementAction(sourceContext, sourceElementId, commands[CREATE]));
@@ -65,8 +60,7 @@ public class RevertService {
       }
     });
 
-    targetElements.entrySet().forEach(entry -> {
-      Id targetElementId = entry.getKey();
+    targetElements.forEach((targetElementId, targetElementRevisionId) -> {
       if (!sourceElements.containsKey(targetElementId)) {
         revertElementActions
             .add(new RevertElementAction(targetContext, targetElementId, commands[DELETE]));
@@ -105,7 +99,7 @@ public class RevertService {
       return elementId;
     }
 
-    public void run(SessionContext context) {
+    void run(SessionContext context) {
       command.run(context, elementContext, elementId);
     }
   }
@@ -114,48 +108,32 @@ public class RevertService {
     void run(SessionContext context, ElementContext elementContext, Id elementId);
   }
 
-  private static int CREATE = 0;
-  private static int UPDATE = 1;
-  private static int DELETE = 2;
+  private static final int CREATE = 0;
+  private static final int UPDATE = 1;
+  private static final int DELETE = 2;
 
-  private ActionCommand[] commands = {new ActionCommand() {
-    @Override
-    public void run(SessionContext context, ElementContext elementContext, Id elementId) {
+  private ActionCommand[] commands = {
       //create
-      Optional<ElementEntity> element = elementPublicStore.get(context, elementContext, elementId);
-      if (!element.isPresent()) {
-        throw getMissingElementException(elementContext, elementId);
-      }
-      elementPrivateStore.create(context, elementContext, element.get());
-    }
-  }, new ActionCommand() {
-    @Override
-    public void run(SessionContext context, ElementContext elementContext, Id elementId) {
+      (context, elementContext, elementId) ->
+          elementPrivateStore.create(context, elementContext,
+              elementPublicStore.get(context, elementContext, elementId)
+                  .orElseThrow(() -> getMissingElementException(elementContext, elementId))),
       //update
-      Optional<ElementEntity> element = elementPublicStore.get(context, elementContext, elementId);
-      if (!element.isPresent()) {
-        throw getMissingElementException(elementContext, elementId);
-      }
-      elementPrivateStore.update(context, elementContext, element.get());
-    }
-  }, new ActionCommand() {
-    @Override
-    public void run(SessionContext context, ElementContext elementContext, Id elementId) {
+      (context, elementContext, elementId) ->
+          elementPrivateStore.update(context, elementContext,
+              elementPublicStore.get(context, elementContext, elementId)
+                  .orElseThrow(() -> getMissingElementException(elementContext, elementId))),
       //delete
-      Optional<ElementEntity> element = elementPrivateStore.get(context, elementContext, elementId);
-      if (!element.isPresent()) {
-        return; // deleted by parent when hierarchy was deleted
-      }
-      elementPrivateStore.delete(context, elementContext, element.get());
-    }
-  }};
+      (context, elementContext, elementId) ->
+          elementPrivateStore.get(context, elementContext, elementId)
+              .ifPresent(element -> elementPrivateStore.delete(context, elementContext, element))
+  };
 
   private RuntimeException getMissingElementException(ElementContext elementContext,
                                                       Id elementId) {
-    return new IllegalStateException(
-        String.format("Item Id %s, version Id %s, revision Id %s: Missing element with Id %s",
-            elementContext.getItemId().getValue(), elementContext.getVersionId().getValue(),
-            elementContext.getRevisionId().getValue(), elementId.getValue())
-    );
+    return new IllegalStateException(String
+        .format("Item Id %s, version Id %s, revision Id %s: Missing element with Id %s",
+            elementContext.getItemId(), elementContext.getVersionId(),
+            elementContext.getRevisionId(), elementId));
   }
 }
