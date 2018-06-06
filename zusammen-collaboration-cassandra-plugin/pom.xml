@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.amdocs.zusammen.plugin</groupId>
         <artifactId>zusammen-collaborative-cassandra</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>1.0.0</version>
     </parent>
 
     <artifactId>zusammen-collaboration-cassandra-plugin</artifactId>
@@ -32,23 +32,23 @@
         <dependency>
             <groupId>com.amdocs.zusammen</groupId>
             <artifactId>zusammen-sdk</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.amdocs.zusammen</groupId>
             <artifactId>zusammen-commons-db-api</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.amdocs.zusammen</groupId>
             <artifactId>zusammen-commons-db-impl</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.amdocs.zusammen.plugin</groupId>
             <artifactId>zusammen-state-store-cassandra-plugin</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.testng</groupId>
@@ -65,7 +65,7 @@
         <dependency>
             <groupId>com.amdocs.zusammen</groupId>
             <artifactId>zusammen-commons-utils</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
     </dependencies>
     <build>
