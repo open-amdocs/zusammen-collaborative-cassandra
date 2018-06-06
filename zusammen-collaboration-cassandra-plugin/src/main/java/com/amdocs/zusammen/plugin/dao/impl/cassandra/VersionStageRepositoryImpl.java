@@ -49,7 +49,7 @@ public class VersionStageRepositoryImpl implements VersionStageRepository {
   private StageEntity<VersionEntity> convertToVersionStage(VersionEntity version, Row row) {
     StageEntity<VersionEntity> versionStage =
         new StageEntity<>(VersionDaoImpl.enrichVersionEntity(version, row),
-            row.getDate(VersionStageField.PUBLISH_TIME));
+            row.getTimestamp(VersionStageField.PUBLISH_TIME));
     versionStage.setAction(Action.valueOf(row.getString(VersionStageField.ACTION)));
     return versionStage;
   }

@@ -150,7 +150,7 @@ public class ElementSynchronizationStateRepositoryImpl
   private SynchronizationStateEntity getSynchronizationStateEntity(Row row) {
     return new SynchronizationStateEntity(new Id(row.getString(SynchronizationStateField.ID)),
         new Id(row.getString(SynchronizationStateField.REVISION_ID)),
-        row.getDate(SynchronizationStateField.PUBLISH_TIME),
+        row.getTimestamp(SynchronizationStateField.PUBLISH_TIME),
         row.getBool(SynchronizationStateField.DIRTY));
   }
 

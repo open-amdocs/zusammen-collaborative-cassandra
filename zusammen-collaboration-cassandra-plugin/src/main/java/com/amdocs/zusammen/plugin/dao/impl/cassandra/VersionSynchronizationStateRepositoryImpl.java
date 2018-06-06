@@ -69,7 +69,7 @@ public class VersionSynchronizationStateRepositoryImpl
   private SynchronizationStateEntity getSynchronizationStateEntity(Id entityId, Row row) {
     SynchronizationStateEntity syncStateEntity = new SynchronizationStateEntity(entityId,
         new Id(row.getString(REVISION_ID_FIELD)));
-    syncStateEntity.setPublishTime(row.getDate(PUBLISH_TIME_FIELD));
+    syncStateEntity.setPublishTime(row.getTimestamp(PUBLISH_TIME_FIELD));
     syncStateEntity.setDirty(!row.getSet(DIRTY_ELEMENT_FIELD, String.class).isEmpty());
     return syncStateEntity;
   }
@@ -80,7 +80,7 @@ public class VersionSynchronizationStateRepositoryImpl
         : row.getString("element_id"));
     SynchronizationStateEntity syncStateEntity = new SynchronizationStateEntity(entityId,
         new Id(row.getString(REVISION_ID_FIELD)));
-    syncStateEntity.setPublishTime(row.getDate(PUBLISH_TIME_FIELD));
+    syncStateEntity.setPublishTime(row.getTimestamp(PUBLISH_TIME_FIELD));
     syncStateEntity.setDirty(!row.getSet(DIRTY_ELEMENT_FIELD, String.class).isEmpty());
     syncStateEntity.setRevisionId(new Id(row.getString(REVISION_ID_FIELD)));
     syncStateEntity.setUser(row.getString(USER));

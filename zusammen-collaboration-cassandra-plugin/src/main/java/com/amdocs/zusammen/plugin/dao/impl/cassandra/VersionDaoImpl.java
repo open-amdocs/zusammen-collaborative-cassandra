@@ -89,8 +89,8 @@ public class VersionDaoImpl implements VersionDao {
 
   static VersionEntity enrichVersionEntity(VersionEntity version, Row row) {
     version.setBaseId(new Id(row.getString(VersionField.BASE_VERSION_ID)));
-    version.setCreationTime(row.getDate(VersionField.CREATION_TIME));
-    version.setModificationTime(row.getDate(VersionField.MODIFICATION_TIME));
+    version.setCreationTime(row.getTimestamp(VersionField.CREATION_TIME));
+    version.setModificationTime(row.getTimestamp(VersionField.MODIFICATION_TIME));
     return version;
   }
 
