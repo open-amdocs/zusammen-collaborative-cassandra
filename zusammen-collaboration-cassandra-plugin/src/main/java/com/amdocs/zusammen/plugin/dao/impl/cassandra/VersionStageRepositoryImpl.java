@@ -4,6 +4,7 @@ import com.amdocs.zusammen.datatypes.SessionContext;
 import com.amdocs.zusammen.datatypes.item.Action;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
+import com.datastax.driver.extras.codecs.enums.EnumNameCodec;
 import com.datastax.driver.mapping.annotations.Accessor;
 import com.datastax.driver.mapping.annotations.Query;
 import com.amdocs.zusammen.plugin.dao.VersionStageRepository;
@@ -15,6 +16,10 @@ import java.util.Date;
 import java.util.Optional;
 
 public class VersionStageRepositoryImpl implements VersionStageRepository {
+
+  static {
+    CassandraDaoUtils.registerCodecs(new EnumNameCodec<>(Action.class));
+  }
 
   @Override
   public Optional<StageEntity<VersionEntity>> get(SessionContext context,
