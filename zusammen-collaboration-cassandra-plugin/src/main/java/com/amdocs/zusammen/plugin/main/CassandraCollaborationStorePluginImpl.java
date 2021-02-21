@@ -350,10 +350,22 @@ public class CassandraCollaborationStorePluginImpl implements CollaborationStore
   public Response<CollaborationElement> getElement(SessionContext context,
                                                    ElementContext elementContext,
                                                    Namespace namespace, Id elementId) {
-    return new Response<>(elementPrivateStore.get(context, elementContext, elementId)
-        .map(elementEntity -> ZusammenPluginUtil
-            .convertToCollaborationElement(elementContext, elementEntity))
-        .orElse(null));
+    return getElement(context, Space.PRIVATE, elementContext, namespace, elementId);
+  }
+
+  @Override
+  public Response<CollaborationElement> getElement(SessionContext context, Space space, ElementContext elementContext,
+                                            Namespace namespace, Id elementId) {
+    if(space == Space.PRIVATE) {
+      return new Response<>(elementPrivateStore.get(context, elementContext, elementId)
+              .map(elementEntity -> ZusammenPluginUtil
+                      .convertToCollaborationElement(elementContext, elementEntity))
+              .orElse(null));
+    }
+    return new Response<>(elementPublicStore.get(context, elementContext, elementId)
+            .map(elementEntity -> ZusammenPluginUtil
+                    .convertToCollaborationElement(elementContext, elementEntity))
+            .orElse(null));
   }
 
   @Override
