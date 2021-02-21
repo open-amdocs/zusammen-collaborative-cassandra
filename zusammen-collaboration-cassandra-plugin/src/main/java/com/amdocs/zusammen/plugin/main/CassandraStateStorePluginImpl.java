@@ -26,7 +26,9 @@ import com.amdocs.zusammen.datatypes.item.ItemVersionData;
 import com.amdocs.zusammen.datatypes.response.Response;
 import com.amdocs.zusammen.plugin.ZusammenPluginUtil;
 import com.amdocs.zusammen.plugin.collaboration.ElementPrivateStore;
+import com.amdocs.zusammen.plugin.collaboration.ElementPublicStore;
 import com.amdocs.zusammen.plugin.collaboration.impl.ElementPrivateStoreImpl;
+import com.amdocs.zusammen.plugin.collaboration.impl.ElementPublicStoreImpl;
 import com.amdocs.zusammen.plugin.dao.ElementRepository;
 import com.amdocs.zusammen.plugin.dao.ElementRepositoryFactory;
 import com.amdocs.zusammen.plugin.dao.VersionDao;
@@ -47,6 +49,7 @@ import java.util.stream.Collectors;
 public class CassandraStateStorePluginImpl extends StateStoreImpl {
 
   private ElementPrivateStore elementPrivateStore = new ElementPrivateStoreImpl();
+  private ElementPublicStore elementPublicStore = new ElementPublicStoreImpl();
 
   @Override
   public Response<Void> deleteItem(SessionContext context, Id itemId) {
@@ -144,10 +147,20 @@ public class CassandraStateStorePluginImpl extends StateStoreImpl {
   @Override
   public Response<StateElement> getElement(SessionContext context, ElementContext elementContext,
                                            Id elementId) {
+    return getElement(context, Space.PRIVATE, elementContext, elementId);
+  }
 
-    return new Response(elementPrivateStore.get(context, elementContext, elementId)
-        .map(elementEntity -> ZusammenPluginUtil.getStateElement(elementContext, elementEntity))
-        .orElse(null));
+  @Override
+  public Response<StateElement> getElement(SessionContext context, Space space, ElementContext elementContext,
+                                           Id elementId) {
+    if (space == Space.PRIVATE) {
+      return new Response(elementPrivateStore.get(context, elementContext, elementId)
+              .map(elementEntity -> ZusammenPluginUtil.getStateElement(elementContext, elementEntity))
+              .orElse(null));
+    }
+    return new Response(elementPublicStore.get(context, elementContext, elementId)
+            .map(elementEntity -> ZusammenPluginUtil.getStateElement(elementContext, elementEntity))
+            .orElse(null));
   }
 
   private ItemVersion getItemVersion(SessionContext context, String spaceName, Id itemId,
